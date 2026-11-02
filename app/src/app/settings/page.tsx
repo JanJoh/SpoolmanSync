@@ -110,6 +110,14 @@ function SettingsContent() {
   // Restore a spool's saved home location on unassign (ahead of the holding pen).
   const [returnToHomeLocation, setReturnToHomeLocation] = useState(false);
 
+  // Assign prompt ("which spool?" for trays with no serial match)
+  const [assignPromptEnabled, setAssignPromptEnabled] = useState(false);
+  const [assignAutoAssign, setAssignAutoAssign] = useState(true);
+  const [assignNotifyService, setAssignNotifyService] = useState('');
+  const [savedAssignNotifyService, setSavedAssignNotifyService] = useState('');
+  const [assignPendingMinutes, setAssignPendingMinutes] = useState('30');
+  const seededAssignPrompt = useRef(false);
+
   // QR base URL state
   const [qrBaseUrl, setQrBaseUrl] = useState('');
   const [savingQrUrl, setSavingQrUrl] = useState(false);
@@ -232,6 +240,16 @@ function SettingsContent() {
       }
       if (data.returnToHomeLocation !== undefined) {
         setReturnToHomeLocation(data.returnToHomeLocation);
+      }
+      // Seed once, like the holding pen: the text inputs are saved on blur and
+      // must not be overwritten by the embedded-mode settings poll.
+      if (data.assignPrompt && !seededAssignPrompt.current) {
+        seededAssignPrompt.current = true;
+        setAssignPromptEnabled(!!data.assignPrompt.enabled);
+        setAssignAutoAssign(data.assignPrompt.autoAssign !== false);
+        setAssignNotifyService(data.assignPrompt.notifyService || '');
+        setSavedAssignNotifyService(data.assignPrompt.notifyService || '');
+        setAssignPendingMinutes(String(data.assignPrompt.pendingMinutes || 30));
       }
       if (data.locationGranularity === 'tray' || data.locationGranularity === 'ams') {
         setLocationGranularity(data.locationGranularity);
@@ -577,6 +595,36 @@ function SettingsContent() {
     } catch {
       setLocationGranularity(previous);
       toast.error('Failed to save location detail');
+    }
+  };
+
+  /** Save one or more assign-prompt fields; returns whether it worked. */
+  const saveAssignPrompt = async (fields: Record<string, unknown>, successMessage: string): Promise<boolean> => {
+    try {
+      const res = await fetch('/api/settings', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ type: 'assign_prompt', ...fields }),
+      });
+      if (!res.ok) {
+        const data = await res.json().catch(() => ({}));
+        throw new Error(data.error || 'Failed to save setting');
+      }
+      toast.success(successMessage);
+      return true;
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : 'Failed to save setting');
+      return false;
+    }
+  };
+
+  const saveAssignNotifyService = async () => {
+    const service = assignNotifyService.trim();
+    if (service === savedAssignNotifyService) return;
+    if (await saveAssignPrompt({ notifyService: service }, service ? `Questions will go to ${service}` : 'Phone notifications disabled')) {
+      setSavedAssignNotifyService(service);
+    } else {
+      setAssignNotifyService(savedAssignNotifyService);
     }
   };
 
@@ -1510,6 +1558,92 @@ function SettingsContent() {
                         behavior of clearing the location. As above, a location you set by hand is
                         never overwritten.
                       </p>
+                    </div>
+                  )}
+
+                  <Separator />
+
+                  {/* Assign prompt — match unidentified spools by material and
+                      colour, and ask on the phone when unsure. */}
+                  <div className="flex items-center space-x-3">
+                    <Checkbox
+                      id="assign-prompt-enabled"
+                      checked={assignPromptEnabled}
+                      onCheckedChange={async (checked) => {
+                        const enabled = checked === true;
+                        setAssignPromptEnabled(enabled);
+                        if (!(await saveAssignPrompt({ enabled }, enabled ? 'Unidentified spools will be matched' : 'Spool matching disabled'))) {
+                          setAssignPromptEnabled(!enabled);
+                        }
+                      }}
+                    />
+                    <div>
+                      <Label htmlFor="assign-prompt-enabled" className="text-sm font-medium cursor-pointer">
+                        Match unidentified spools and ask which one was loaded
+                      </Label>
+                      <p className="text-xs text-muted-foreground">
+                        When a tray reports filament that matches no spool by serial — third-party spools, or Bambu spools whose serial SpoolmanSync has not learned yet — look for spools of the same material and a similar colour. A clear match is assigned; otherwise your phone is asked which spool it is, with a button per likely spool. Opening a spool&apos;s page from its NFC sticker or QR label also answers the question. A Bambu spool picked this way has its serial remembered.
+                      </p>
+                    </div>
+                  </div>
+
+                  {assignPromptEnabled && (
+                    <div className="ml-7 space-y-4">
+                      <div className="space-y-2">
+                        <Label htmlFor="assign-notify-service" className="text-sm font-medium">
+                          Phone to ask
+                        </Label>
+                        <Input
+                          id="assign-notify-service"
+                          value={assignNotifyService}
+                          placeholder="notify.mobile_app_your_phone"
+                          className="max-w-sm"
+                          onChange={(e) => setAssignNotifyService(e.target.value)}
+                          onBlur={saveAssignNotifyService}
+                          onKeyDown={(e) => {
+                            if (e.key === 'Enter') e.currentTarget.blur();
+                          }}
+                        />
+                        <p className="text-xs text-muted-foreground">
+                          The Home Assistant mobile app notify service. Leave empty to skip notifications and answer from the sticker, label, or dashboard instead. Links in the notification use the QR code base URL above.
+                        </p>
+                      </div>
+
+                      <div className="flex items-center space-x-3">
+                        <Checkbox
+                          id="assign-auto-assign"
+                          checked={assignAutoAssign}
+                          onCheckedChange={async (checked) => {
+                            const autoAssign = checked === true;
+                            setAssignAutoAssign(autoAssign);
+                            if (!(await saveAssignPrompt({ autoAssign }, autoAssign ? 'Clear matches will be assigned automatically' : 'You will always be asked'))) {
+                              setAssignAutoAssign(!autoAssign);
+                            }
+                          }}
+                        />
+                        <Label htmlFor="assign-auto-assign" className="text-sm font-medium cursor-pointer">
+                          Assign clear matches without asking
+                        </Label>
+                      </div>
+
+                      <div className="space-y-2">
+                        <Label htmlFor="assign-pending-minutes" className="text-sm font-medium">
+                          Keep waiting for an answer (minutes)
+                        </Label>
+                        <Input
+                          id="assign-pending-minutes"
+                          type="number"
+                          min={1}
+                          max={1440}
+                          value={assignPendingMinutes}
+                          className="max-w-[8rem]"
+                          onChange={(e) => setAssignPendingMinutes(e.target.value)}
+                          onBlur={() => saveAssignPrompt(
+                            { pendingMinutes: Number(assignPendingMinutes) },
+                            'Saved',
+                          )}
+                        />
+                      </div>
                     </div>
                   )}
                 </CardContent>

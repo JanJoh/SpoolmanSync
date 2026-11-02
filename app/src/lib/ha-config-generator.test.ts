@@ -90,7 +90,7 @@ describe('generateHAConfig — webhook shared secret injection', () => {
   it('injects the X-SpoolmanSync-Token header into both rest_commands when a secret is provided', () => {
     const { configurationAdditions } = generateHAConfig([bambuPrinter()], 'http://hook', 'http://hook', 'SECRET123');
     const occurrences = configurationAdditions.split('X-SpoolmanSync-Token: "SECRET123"').length - 1;
-    expect(occurrences).toBe(2); // spoolmansync_update_spool + spoolmansync_tray_change
+    expect(occurrences).toBe(3); // spoolmansync_update_spool + spoolmansync_tray_change + spoolmansync_assign_choice
   });
 
   it('omits the token header entirely when no secret is provided', () => {
@@ -450,8 +450,10 @@ describe('generateHAConfig — tray_uuid is Bambu-only', () => {
     if (Array.isArray(node)) return node.flatMap(restCommandPayloads);
     if (node === null || typeof node !== 'object') return [];
     const record = node as Record<string, unknown>;
+    // Tray payloads only: the assign-choice forwarder sends no tray data.
     const found = typeof record.action === 'string'
       && record.action.startsWith('rest_command.spoolmansync_')
+      && record.action !== 'rest_command.spoolmansync_assign_choice'
       && record.data && typeof record.data === 'object'
       ? [record.data as Record<string, unknown>]
       : [];
@@ -600,5 +602,35 @@ describe('generateHAConfig — issue #78 (offline must deduct before resetting)'
         expect(flushes || warns, `${printer.prefix}: ${branch.conditions[0].value_template}`).toBe(true);
       }
     }
+  });
+});
+
+describe('generateHAConfig — assign-choice forwarder', () => {
+  it('adds one automation forwarding SPOOLMANSYNC_ASSIGN_ notification actions', () => {
+    const cfg = generateHAConfig([bambuPrinter()], 'http://hook', 'http://hook', 'SECRET123');
+    const automations = parseYaml(cfg.automationsYaml) as Array<{
+      id: string;
+      triggers: Array<{ trigger: string; event_type?: string }>;
+      actions: Array<{ action: string; data: Record<string, string> }>;
+    }>;
+
+    const forwarders = automations.filter(a => a.id === 'spoolmansync_assign_choice');
+    expect(forwarders).toHaveLength(1);
+    expect(forwarders[0].triggers).toEqual([{ trigger: 'event', event_type: 'mobile_app_notification_action' }]);
+    expect(forwarders[0].actions[0]).toEqual({
+      action: 'rest_command.spoolmansync_assign_choice',
+      data: { choice: '{{ trigger.event.data.action }}' },
+    });
+
+    const config = parseYaml(cfg.configurationAdditions) as {
+      rest_command: Record<string, { headers: Record<string, string>; payload: string }>;
+    };
+    const rest = config.rest_command.spoolmansync_assign_choice;
+    expect(rest.headers['X-SpoolmanSync-Token']).toBe('SECRET123');
+    expect(rest.payload).toContain('"event": "assign_choice"');
+  });
+
+  it('adds nothing when there are no printers', () => {
+    expect(generateHAConfig([], 'http://hook', 'http://hook').automationsYaml).toBe('[]');
   });
 });

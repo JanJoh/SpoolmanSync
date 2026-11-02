@@ -140,6 +140,8 @@ describe('generateHAConfig — missing current_stage must not break the whole au
     // automation, taking tray-change tracking down with it.
     for (const automation of parsed) {
       for (const trigger of automation.triggers) {
+        // Event triggers (the assign-choice forwarder) carry no entity_id.
+        if ((trigger as { trigger?: string }).trigger === 'event') continue;
         const ids = Array.isArray(trigger.entity_id) ? trigger.entity_id : [trigger.entity_id];
         for (const id of ids) {
           expect(id).toBeTruthy();
@@ -224,6 +226,8 @@ describe('generateHAConfig — every printer shape produces loadable YAML', () =
 
       for (const automation of automations ?? []) {
         for (const trigger of automation.triggers ?? []) {
+          // Event triggers (the assign-choice forwarder) carry no entity_id.
+          if ((trigger as { trigger?: string }).trigger === 'event') continue;
           const ids = Array.isArray(trigger.entity_id) ? trigger.entity_id : [trigger.entity_id];
           for (const id of ids) {
             expect(id, `${label} / ${automation.id}`).toBeTruthy();

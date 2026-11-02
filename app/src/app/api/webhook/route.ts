@@ -9,6 +9,9 @@ import { getWebhookSecret, isWebhookAuthEnabled, tokensMatch, WEBHOOK_TOKEN_HEAD
 import { isValidTrayUuid, lengthToWeight, classifyTrayState, isActivePrintState } from '@/lib/webhook-helpers';
 import { trayCarriesSpoolSerial } from '@/lib/creality';
 import { applyLocationSync } from '@/lib/spool-location';
+import { clearPendingTray } from '@/lib/pending-trays';
+import { getAssignPromptSettings, describeTray, spoolTitle, clearPhoneNotification } from '@/lib/assign-prompt';
+import { handleUnidentifiedTray, applyAssignChoice } from '@/lib/assign-prompt-flow';
 
 /**
  * Webhook endpoint for Home Assistant automations
@@ -240,7 +243,7 @@ export async function POST(request: NextRequest) {
 
     // Handle tray_change event - auto-assign spool by serial number or handle empty tray
     if (event === 'tray_change') {
-      const { tray_entity_id, tray_uuid, name, material, current_print_state } = body;
+      const { tray_entity_id, tray_uuid, name, material, color, current_print_state } = body;
       const spools = await client.getSpools();
 
       // Resolve entity_id to unique_id for matching and assignment
@@ -323,6 +326,16 @@ export async function POST(request: NextRequest) {
           return NextResponse.json({ status: 'ignored', reason: 'ha_unreachable' });
         }
 
+        // A tray waiting for "which spool?" was emptied again: drop the question.
+        if (await clearPendingTray(trayUniqueId, tray_entity_id)) {
+          const promptSettings = await getAssignPromptSettings();
+          await clearPhoneNotification(
+            await HomeAssistantClient.fromConnection().catch(() => null),
+            promptSettings.notifyService,
+            trayUniqueId,
+          );
+        }
+
         // Auto-unassign any spool currently assigned to this tray
         const jsonTrayId = JSON.stringify(trayUniqueId);
         let assignedSpool = spools.find(s => s.extra?.['active_tray'] === jsonTrayId);
@@ -380,6 +393,7 @@ export async function POST(request: NextRequest) {
 
         if (matchedSpool) {
           await client.assignSpoolToTray(matchedSpool.id, trayUniqueId);
+          await clearPendingTray(trayUniqueId, tray_entity_id);
 
           // Emit real-time update event
           const updateEvent: SpoolUpdateEvent = {
@@ -414,6 +428,50 @@ export async function POST(request: NextRequest) {
       const assignedSpool =
         spools.find(s => s.extra?.['active_tray'] === JSON.stringify(trayUniqueId)) ??
         spools.find(s => s.extra?.['active_tray'] === JSON.stringify(tray_entity_id));
+
+      // Opt-in assign prompt: match on material and colour, then assign a
+      // confident match or ask on the phone (see assign-prompt-flow.ts).
+      if (!assignedSpool) {
+        const promptSettings = await getAssignPromptSettings();
+        if (promptSettings.enabled) {
+          const ha = await HomeAssistantClient.fromConnection().catch(() => null);
+          const printers = ha ? await ha.discoverPrinters().catch(() => []) : [];
+          const serial = isValidTrayUuid(tray_uuid) && await traySupportsSerial(tray_entity_id) ? tray_uuid : '';
+          const outcome = await handleUnidentifiedTray(client, spools, {
+            trayId: trayUniqueId,
+            entityId: tray_entity_id,
+            label: describeTray(printers, tray_entity_id),
+            material: material || '',
+            color: color || '',
+            traySerial: serial,
+          }, promptSettings, ha);
+
+          if (outcome.action === 'auto_assigned') {
+            const updateEvent: SpoolUpdateEvent = {
+              type: 'assign',
+              spoolId: outcome.spool.id,
+              spoolName: outcome.spool.filament.name,
+              trayId: tray_entity_id,
+              timestamp: Date.now(),
+            };
+            spoolEvents.emit(SPOOL_UPDATED, updateEvent);
+            await createActivityLog({
+              type: 'spool_change',
+              message: `Auto-assigned spool ${spoolTitle(outcome.spool)} to ${tray_entity_id} (matched by material and colour)`,
+              details: { spoolId: outcome.spool.id, trayId: tray_entity_id, matchedBy: 'color_match', material, color, notified: outcome.notified },
+            });
+            return NextResponse.json({ status: 'success', spool: outcome.spool, matchedBy: 'color_match' });
+          }
+
+          if (outcome.action === 'prompted') {
+            await createActivityLog({
+              type: 'assign_prompt_sent',
+              message: `Asked which spool is in ${tray_entity_id} (${outcome.candidateIds.length} candidate${outcome.candidateIds.length === 1 ? '' : 's'})`,
+              details: { trayId: tray_entity_id, material, color, candidateIds: outcome.candidateIds, notified: outcome.notified },
+            });
+          }
+        }
+      }
 
       const taggedSpoolCount = client.countTaggedSpools(spools);
       const serialState = !isValidTrayUuid(tray_uuid)
@@ -465,6 +523,32 @@ export async function POST(request: NextRequest) {
         serialMatch: serialState,
         printerReports: { name, material, tray_uuid },
       });
+    }
+
+    // A button on an assign-prompt notification was tapped (forwarded by the
+    // generated mobile_app_notification_action automation).
+    if (event === 'assign_choice') {
+      const promptSettings = await getAssignPromptSettings();
+      const ha = await HomeAssistantClient.fromConnection().catch(() => null);
+      const outcome = await applyAssignChoice(client, String(body.action ?? ''), promptSettings, ha);
+      if (outcome.status !== 'assigned') {
+        return NextResponse.json({ status: 'ignored', reason: outcome.reason });
+      }
+
+      const updateEvent: SpoolUpdateEvent = {
+        type: 'assign',
+        spoolId: outcome.spool.id,
+        spoolName: outcome.spool.filament.name,
+        trayId: outcome.pending.entityId,
+        timestamp: Date.now(),
+      };
+      spoolEvents.emit(SPOOL_UPDATED, updateEvent);
+      await createActivityLog({
+        type: 'spool_change',
+        message: `Assigned spool ${spoolTitle(outcome.spool)} to ${outcome.pending.entityId} (chosen on phone)`,
+        details: { spoolId: outcome.spool.id, trayId: outcome.pending.entityId, matchedBy: 'phone_choice' },
+      });
+      return NextResponse.json({ status: 'success', spool: outcome.spool, matchedBy: 'phone_choice' });
     }
 
     return NextResponse.json({ status: 'ignored', reason: 'unknown event type' });
