@@ -18,6 +18,13 @@ import {
   parseLocationGranularity,
   rememberGranularity,
 } from '@/lib/spool-location';
+import {
+  ASSIGN_PROMPT_ENABLED_KEY,
+  ASSIGN_PROMPT_NOTIFY_KEY,
+  AUTO_ASSIGN_CONFIDENT_KEY,
+  normalizeNotifyService,
+} from '@/lib/assign-prompt';
+import { PENDING_MINUTES_KEY, DEFAULT_PENDING_MINUTES } from '@/lib/pending-trays';
 
 export async function GET() {
   try {
@@ -61,6 +68,10 @@ export async function GET() {
       const syncLocationSetting = await prisma.settings.findUnique({ where: { key: 'sync_spoolman_location' } });
       const unassignedLocationSetting = await prisma.settings.findUnique({ where: { key: UNASSIGNED_LOCATION_KEY } });
       const locationGranularitySetting = await prisma.settings.findUnique({ where: { key: LOCATION_GRANULARITY_KEY } });
+      const assignPromptRows = await prisma.settings.findMany({
+        where: { key: { in: [ASSIGN_PROMPT_ENABLED_KEY, ASSIGN_PROMPT_NOTIFY_KEY, AUTO_ASSIGN_CONFIDENT_KEY, PENDING_MINUTES_KEY] } },
+      });
+      const assignPromptValue = (key: string) => assignPromptRows.find(r => r.key === key)?.value;
       const webhookAuthEnabled = await isWebhookAuthEnabled();
 
       return NextResponse.json({
@@ -82,6 +93,12 @@ export async function GET() {
         syncSpoolmanLocation: syncLocationSetting?.value === 'true',
         unassignedSpoolLocation: unassignedLocationSetting?.value ?? '',
         locationGranularity: parseLocationGranularity(locationGranularitySetting?.value),
+        assignPrompt: {
+          enabled: assignPromptValue(ASSIGN_PROMPT_ENABLED_KEY) === 'true',
+          notifyService: assignPromptValue(ASSIGN_PROMPT_NOTIFY_KEY) ?? '',
+          autoAssign: assignPromptValue(AUTO_ASSIGN_CONFIDENT_KEY) !== 'false',
+          pendingMinutes: Number(assignPromptValue(PENDING_MINUTES_KEY)) || DEFAULT_PENDING_MINUTES,
+        },
         webhookConfigured: webhookAuthEnabled,
       });
     }
@@ -271,6 +288,10 @@ export async function GET() {
     const syncLocationSetting = await prisma.settings.findUnique({ where: { key: 'sync_spoolman_location' } });
     const unassignedLocationSetting = await prisma.settings.findUnique({ where: { key: UNASSIGNED_LOCATION_KEY } });
     const locationGranularitySetting = await prisma.settings.findUnique({ where: { key: LOCATION_GRANULARITY_KEY } });
+    const assignPromptRows = await prisma.settings.findMany({
+      where: { key: { in: [ASSIGN_PROMPT_ENABLED_KEY, ASSIGN_PROMPT_NOTIFY_KEY, AUTO_ASSIGN_CONFIDENT_KEY, PENDING_MINUTES_KEY] } },
+    });
+    const assignPromptValue = (key: string) => assignPromptRows.find(r => r.key === key)?.value;
     const webhookAuthEnabled = await isWebhookAuthEnabled();
 
     return NextResponse.json({
@@ -288,6 +309,12 @@ export async function GET() {
       syncSpoolmanLocation: syncLocationSetting?.value === 'true',
       unassignedSpoolLocation: unassignedLocationSetting?.value ?? '',
       locationGranularity: parseLocationGranularity(locationGranularitySetting?.value),
+      assignPrompt: {
+        enabled: assignPromptValue(ASSIGN_PROMPT_ENABLED_KEY) === 'true',
+        notifyService: assignPromptValue(ASSIGN_PROMPT_NOTIFY_KEY) ?? '',
+        autoAssign: assignPromptValue(AUTO_ASSIGN_CONFIDENT_KEY) !== 'false',
+        pendingMinutes: Number(assignPromptValue(PENDING_MINUTES_KEY)) || DEFAULT_PENDING_MINUTES,
+      },
       webhookConfigured: webhookAuthEnabled,
     });
   } catch (error) {
@@ -405,6 +432,46 @@ export async function POST(request: NextRequest) {
         update: { value: location },
       });
       return NextResponse.json({ success: true, location });
+    }
+
+    if (type === 'assign_prompt') {
+      // Opt-in "which spool?" prompt for trays with no serial match. Fields are
+      // optional so the UI can save one control at a time.
+      const updates: { key: string; value: string }[] = [];
+      if (body.enabled !== undefined) {
+        if (typeof body.enabled !== 'boolean') {
+          return NextResponse.json({ error: 'enabled must be a boolean' }, { status: 400 });
+        }
+        updates.push({ key: ASSIGN_PROMPT_ENABLED_KEY, value: String(body.enabled) });
+      }
+      if (body.autoAssign !== undefined) {
+        if (typeof body.autoAssign !== 'boolean') {
+          return NextResponse.json({ error: 'autoAssign must be a boolean' }, { status: 400 });
+        }
+        updates.push({ key: AUTO_ASSIGN_CONFIDENT_KEY, value: String(body.autoAssign) });
+      }
+      if (body.notifyService !== undefined) {
+        const raw = typeof body.notifyService === 'string' ? body.notifyService.trim() : null;
+        const service = raw === null ? '' : normalizeNotifyService(raw);
+        if (raw === null || (raw !== '' && !service)) {
+          return NextResponse.json(
+            { error: 'notifyService must be a notify service such as notify.mobile_app_my_phone, or empty' },
+            { status: 400 }
+          );
+        }
+        updates.push({ key: ASSIGN_PROMPT_NOTIFY_KEY, value: service ? `notify.${service}` : '' });
+      }
+      if (body.pendingMinutes !== undefined) {
+        const minutes = Number(body.pendingMinutes);
+        if (!Number.isInteger(minutes) || minutes < 1 || minutes > 1440) {
+          return NextResponse.json({ error: 'pendingMinutes must be a whole number from 1 to 1440' }, { status: 400 });
+        }
+        updates.push({ key: PENDING_MINUTES_KEY, value: String(minutes) });
+      }
+      for (const { key, value } of updates) {
+        await prisma.settings.upsert({ where: { key }, create: { key, value }, update: { value } });
+      }
+      return NextResponse.json({ success: true });
     }
 
     if (type === 'location_granularity') {

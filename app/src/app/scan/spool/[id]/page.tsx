@@ -18,6 +18,7 @@ import { toast } from 'sonner';
 import { ArrowLeft, Loader2, CheckCircle2 } from 'lucide-react';
 import { SpoolColorSwatch } from '@/components/spool-color-swatch';
 import type { Spool } from '@/lib/api/spoolman';
+import type { PendingTray } from '@/lib/pending-trays';
 import { isKioskMode, disableKioskMode } from '@/lib/kiosk';
 import Link from 'next/link';
 
@@ -37,6 +38,9 @@ export default function SpoolAssignPage({
   const router = useRouter();
   const [spool, setSpool] = useState<Spool | null>(null);
   const [trays, setTrays] = useState<TrayOption[]>([]);
+  // Trays just loaded with a spool SpoolmanSync could not identify (assign
+  // prompt). Opening this page from the spool's sticker or label answers them.
+  const [pendingTrays, setPendingTrays] = useState<PendingTray[]>([]);
   const [loading, setLoading] = useState(true);
   const [assigning, setAssigning] = useState(false);
   const [pendingTrayId, setPendingTrayId] = useState<string | null>(null);
@@ -70,9 +74,10 @@ export default function SpoolAssignPage({
 
     try {
       // Fetch spool and trays in parallel
-      const [spoolsRes, printersRes] = await Promise.all([
+      const [spoolsRes, printersRes, pendingRes] = await Promise.all([
         fetch('/api/spools', { signal }),
         fetch('/api/printers', { signal }),
+        fetch('/api/pending-trays', { signal }).catch(() => null),
       ]);
 
       // Ignore stale/aborted responses (component unmounted or id changed)
@@ -134,6 +139,16 @@ export default function SpoolAssignPage({
         }
 
         setTrays(trayOptions);
+
+        // Only offer pending trays this page can actually assign to.
+        if (pendingRes?.ok) {
+          const pendingData = await pendingRes.json();
+          if (!isActive()) return;
+          const known = new Set(trayOptions.map(t => t.id));
+          setPendingTrays(
+            (pendingData.pending || []).filter((p: PendingTray) => known.has(p.trayId)),
+          );
+        }
       }
     } catch (err) {
       // A fetch abort surfaces as an AbortError — swallow it, it's expected on
@@ -370,6 +385,43 @@ export default function SpoolAssignPage({
                 </div>
               </CardContent>
             </Card>
+
+            {/* Just loaded — the tray(s) waiting for this answer */}
+            {pendingTrays.length > 0 && (
+              <Card className="border-primary">
+                <CardHeader>
+                  <CardTitle>Just loaded</CardTitle>
+                  <CardDescription>
+                    {pendingTrays.length === 1
+                      ? 'This tray is waiting to know which spool was loaded.'
+                      : 'These trays are waiting to know which spool was loaded.'}
+                  </CardDescription>
+                </CardHeader>
+                <CardContent className="space-y-3">
+                  {pendingTrays.map((p) => {
+                    const tray = trays.find(t => t.id === p.trayId);
+                    if (!tray) return null;
+                    return (
+                      <div key={p.id} className="flex items-center justify-between gap-3">
+                        <div>
+                          <p className="font-medium">{p.label}</p>
+                          <p className="text-sm text-muted-foreground">
+                            Printer reports {[p.material, p.color].filter(Boolean).join(', ') || 'unknown filament'}
+                          </p>
+                        </div>
+                        <Button onClick={() => handleAssign(tray)} disabled={assigning}>
+                          {assigning && pendingTrayId === tray.id ? (
+                            <Loader2 className="h-4 w-4 animate-spin" />
+                          ) : (
+                            'Assign here'
+                          )}
+                        </Button>
+                      </div>
+                    );
+                  })}
+                </CardContent>
+              </Card>
+            )}
 
             {/* Tray Selection */}
             {trays.length > 0 ? (
