@@ -13,13 +13,26 @@ vi.mock('@/lib/db', () => {
   return { default: prisma, prisma };
 });
 
-const { getUnassignedLocation, applyLocationSync, LOCATION_SYNC_KEY, UNASSIGNED_LOCATION_KEY } =
-  await import('./spool-location');
+const {
+  getUnassignedLocation,
+  isReturnToHomeEnabled,
+  applyLocationSync,
+  LOCATION_SYNC_KEY,
+  UNASSIGNED_LOCATION_KEY,
+  RETURN_TO_HOME_KEY,
+} = await import('./spool-location');
 
-/** Stub the two settings rows this code reads. */
-function settings({ syncEnabled, unassigned }: { syncEnabled: boolean; unassigned?: string }) {
+/** Stub the settings rows this code reads. */
+function settings({ syncEnabled, unassigned, returnToHome }: {
+  syncEnabled: boolean;
+  unassigned?: string;
+  returnToHome?: boolean;
+}) {
   findUnique.mockImplementation(async ({ where }: { where: { key: string } }) => {
     if (where.key === LOCATION_SYNC_KEY) return { value: String(syncEnabled) };
+    if (where.key === RETURN_TO_HOME_KEY) {
+      return returnToHome === undefined ? null : { value: String(returnToHome) };
+    }
     if (where.key === UNASSIGNED_LOCATION_KEY) {
       return unassigned === undefined ? null : { value: unassigned };
     }
@@ -72,6 +85,7 @@ describe('applyLocationSync', () => {
       setLocationResolver: vi.fn(),
       setLocationMatcher: vi.fn(),
       setUnassignedLocation: vi.fn(),
+      setReturnToHomeLocation: vi.fn(),
     };
 
     const active = await applyLocationSync(client as never);
@@ -80,6 +94,7 @@ describe('applyLocationSync', () => {
     expect(client.setLocationResolver).not.toHaveBeenCalled();
     expect(client.setLocationMatcher).not.toHaveBeenCalled();
     expect(client.setUnassignedLocation).not.toHaveBeenCalled();
+    expect(client.setReturnToHomeLocation).not.toHaveBeenCalled();
   });
 
   it('wires the resolver, the matcher AND the holding pen together when enabled', async () => {
@@ -88,6 +103,7 @@ describe('applyLocationSync', () => {
       setLocationResolver: vi.fn(),
       setLocationMatcher: vi.fn(),
       setUnassignedLocation: vi.fn(),
+      setReturnToHomeLocation: vi.fn(),
     };
 
     const active = await applyLocationSync(client as never);
@@ -106,10 +122,43 @@ describe('applyLocationSync', () => {
       setLocationResolver: vi.fn(),
       setLocationMatcher: vi.fn(),
       setUnassignedLocation: vi.fn(),
+      setReturnToHomeLocation: vi.fn(),
     };
 
     await applyLocationSync(client as never);
 
     expect(client.setUnassignedLocation).toHaveBeenCalledWith('');
+    expect(client.setReturnToHomeLocation).toHaveBeenCalledWith(false);
+  });
+
+  it('wires return-to-home when it is enabled', async () => {
+    settings({ syncEnabled: true, returnToHome: true });
+    const client = {
+      setLocationResolver: vi.fn(),
+      setLocationMatcher: vi.fn(),
+      setUnassignedLocation: vi.fn(),
+      setReturnToHomeLocation: vi.fn(),
+    };
+
+    await applyLocationSync(client as never);
+
+    expect(client.setReturnToHomeLocation).toHaveBeenCalledWith(true);
+  });
+});
+
+describe('isReturnToHomeEnabled', () => {
+  it('is true only when both location sync and the setting are on', async () => {
+    settings({ syncEnabled: true, returnToHome: true });
+    expect(await isReturnToHomeEnabled()).toBe(true);
+  });
+
+  it('is inert while location sync is off', async () => {
+    settings({ syncEnabled: false, returnToHome: true });
+    expect(await isReturnToHomeEnabled()).toBe(false);
+  });
+
+  it('defaults to off when never set', async () => {
+    settings({ syncEnabled: true });
+    expect(await isReturnToHomeEnabled()).toBe(false);
   });
 });
