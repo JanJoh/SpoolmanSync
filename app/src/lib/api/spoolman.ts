@@ -173,12 +173,31 @@ export type LocationMatcher = (trayKey: string, location: string) => Promise<boo
  */
 export const SPOOLMAN_LOCATION_MAX = 64;
 
+/**
+ * Spool extra field holding the spool's own storage location ("home"), saved
+ * when it is assigned to a tray and restored when it is unassigned. Only used
+ * while the return-to-home setting is on (see setReturnToHomeLocation).
+ */
+export const HOME_LOCATION_FIELD = 'home_location';
+
+/** Decode a JSON-encoded string extra value, '' for anything else. */
+function parseExtraString(raw: string | undefined): string {
+  if (!raw) return '';
+  try {
+    const parsed: unknown = JSON.parse(raw);
+    return typeof parsed === 'string' ? parsed.trim() : '';
+  } catch {
+    return '';
+  }
+}
+
 export class SpoolmanClient {
   private baseUrl: string;
   private entityIdResolver: EntityIdResolver | null = null;
   private locationResolver: LocationResolver | null = null;
   private locationMatcher: LocationMatcher | null = null;
   private unassignedLocation = '';
+  private returnToHomeLocation = false;
 
   constructor(baseUrl: string) {
     this.baseUrl = baseUrl.replace(/\/$/, '');
@@ -228,6 +247,41 @@ export class SpoolmanClient {
    */
   setUnassignedLocation(location: string): void {
     this.unassignedLocation = (location || '').trim();
+  }
+
+  /**
+   * Return spools to their own storage location on unassign.
+   *
+   * When on, assigning a spool to a tray first saves its current `location` to
+   * the `home_location` extra field (unless that location is a tray label we
+   * wrote, or the holding pen), and the guarded unassign restores it — taking
+   * precedence over the holding pen. A spool with no saved home falls back to
+   * the holding pen / clear behavior. Has no effect without a location resolver.
+   */
+  setReturnToHomeLocation(enabled: boolean): void {
+    this.returnToHomeLocation = enabled;
+  }
+
+  /**
+   * The location to remember as this spool's home before it moves into a tray,
+   * or '' when its current location should not be remembered.
+   */
+  private async homeLocationToSave(spool: Spool, newTrayLabel: string): Promise<string> {
+    const current = (spool.location || '').trim();
+    if (!current) return '';
+    if (current === newTrayLabel) return '';
+    if (this.unassignedLocation && current === this.unassignedLocation.slice(0, SPOOLMAN_LOCATION_MAX)) return '';
+
+    // Moving between trays: the current location is the label we wrote for the
+    // tray being left, not a shelf, so keep the home saved earlier.
+    const oldTray = parseExtraString(spool.extra?.['active_tray']);
+    if (oldTray && this.locationResolver) {
+      const ours = this.locationMatcher
+        ? await this.locationMatcher(oldTray, current)
+        : (await this.locationResolver(oldTray)) === current;
+      if (ours) return '';
+    }
+    return current;
   }
 
   /**
@@ -369,15 +423,20 @@ export class SpoolmanClient {
     }
     newExtra['active_tray'] = JSON.stringify(trayId);
 
-    // Build the PATCH body. `location` is a native top-level field (NOT in extra).
-    const body: Record<string, unknown> = { extra: await this.sanitizeExtra(newExtra) };
-
     // If location sync is enabled, set the native location to reflect this tray.
     // An unresolved tray ('') leaves location untouched.
+    let label = '';
     if (this.locationResolver) {
-      const label = await this.locationResolver(trayId);
-      if (label) body.location = label;
+      label = await this.locationResolver(trayId);
+      if (label && this.returnToHomeLocation) {
+        const home = await this.homeLocationToSave(spool, label);
+        if (home) newExtra[HOME_LOCATION_FIELD] = JSON.stringify(home);
+      }
     }
+
+    // Build the PATCH body. `location` is a native top-level field (NOT in extra).
+    const body: Record<string, unknown> = { extra: await this.sanitizeExtra(newExtra) };
+    if (label) body.location = label;
 
     // Assign the new spool
     return this.fetch(`/spool/${spoolId}`, {
@@ -430,12 +489,20 @@ export class SpoolmanClient {
           ? await this.locationMatcher(oldTray, spool.location)
           : (await this.locationResolver(oldTray)) === spool.location;
         if (wasOurs) {
-          // With a holding pen configured, park the spool there so it stays
-          // visible in Spoolman's location views instead of vanishing from them.
+          // Return-to-home wins when the spool has a saved home. Otherwise, with
+          // a holding pen configured, park the spool there so it stays visible
+          // in Spoolman's location views instead of vanishing from them.
           // Otherwise null, which truly unsets Spoolman's `str | None` field.
-          body.location = this.unassignedLocation
-            ? this.unassignedLocation.slice(0, SPOOLMAN_LOCATION_MAX)
-            : null;
+          const home = this.returnToHomeLocation
+            ? parseExtraString(spool.extra?.[HOME_LOCATION_FIELD])
+            : '';
+          if (home) {
+            body.location = home.slice(0, SPOOLMAN_LOCATION_MAX);
+          } else {
+            body.location = this.unassignedLocation
+              ? this.unassignedLocation.slice(0, SPOOLMAN_LOCATION_MAX)
+              : null;
+          }
         }
       }
     }
@@ -586,6 +653,7 @@ export class SpoolmanClient {
       { key: 'active_tray', name: 'active_tray', description: 'tray assignments' },
       { key: 'barcode', name: 'barcode', description: 'barcode/QR code scanning' },
       { key: 'tag', name: 'tag', description: 'Bambu spool serial number (tray_uuid) for auto-matching' },
+      { key: HOME_LOCATION_FIELD, name: 'Home location', description: 'storage location restored when a spool is unassigned' },
     ];
 
     try {
