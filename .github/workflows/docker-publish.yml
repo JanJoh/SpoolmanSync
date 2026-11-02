@@ -17,6 +17,8 @@ env:
 
 jobs:
   build-and-push:
+    # Upstream's images; the JanJoh fork publishes its add-on with fork-addon.yml.
+    if: github.repository == 'gibz104/SpoolmanSync'
     runs-on: ubuntu-latest
     permissions:
       contents: read

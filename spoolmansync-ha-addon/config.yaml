@@ -1,11 +1,10 @@
-name: SpoolmanSync
-version: "1.6.14"
+name: SpoolmanSync (JanJoh fork)
+version: "1.6.14-jj.1"
 slug: spoolmansync-ha-addon
-description: Automatic filament tracking for Bambu Lab and Creality printers with Spoolman
-url: https://github.com/gibz104/SpoolmanSync
-image: ghcr.io/gibz104/spoolmansync-addon
+description: Automatic filament tracking for Bambu Lab and Creality printers with Spoolman (fork with home locations and colour matching)
+url: https://github.com/JanJoh/SpoolmanSync
+image: ghcr.io/janjoh/spoolmansync-addon
 arch:
-  - aarch64
   - amd64
 
 # Ingress (web UI in HA sidebar)

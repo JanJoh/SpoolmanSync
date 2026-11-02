@@ -1,0 +1,61 @@
+name: Build fork add-on image
+
+# Publishes the Home Assistant add-on image for this fork only:
+# ghcr.io/<owner>/spoolmansync-addon:<version>, amd64. Push a tag v<version>
+# matching spoolmansync-ha-addon/config.yaml, or run it by hand.
+
+on:
+  push:
+    tags:
+      - 'v*'
+  workflow_dispatch:
+
+jobs:
+  addon:
+    if: github.repository != 'gibz104/SpoolmanSync'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Read version and image name
+        id: meta
+        run: |
+          VERSION=$(grep '^version:' spoolmansync-ha-addon/config.yaml | sed 's/version: *"\(.*\)"/\1/')
+          APP_VERSION=$(node -p "require('./app/package.json').version")
+          if [ "$VERSION" != "$APP_VERSION" ]; then
+            echo "::error::Version mismatch! package.json=$APP_VERSION, config.yaml=$VERSION"
+            exit 1
+          fi
+          if [[ "$GITHUB_REF" == refs/tags/v* && "${GITHUB_REF#refs/tags/v}" != "$VERSION" ]]; then
+            echo "::error::Tag ${GITHUB_REF#refs/tags/} does not match config.yaml version $VERSION"
+            exit 1
+          fi
+          OWNER=$(echo "$GITHUB_REPOSITORY_OWNER" | tr '[:upper:]' '[:lower:]')
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+          echo "image=ghcr.io/$OWNER/spoolmansync-addon" >> "$GITHUB_OUTPUT"
+
+      - uses: docker/setup-buildx-action@v3
+
+      - uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Build and push add-on
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: ./spoolmansync-ha-addon/Dockerfile
+          platforms: linux/amd64
+          push: true
+          tags: |
+            ${{ steps.meta.outputs.image }}:${{ steps.meta.outputs.version }}
+            ${{ steps.meta.outputs.image }}:latest
+          labels: |
+            org.opencontainers.image.source=https://github.com/${{ github.repository }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
