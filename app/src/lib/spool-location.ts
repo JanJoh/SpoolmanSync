@@ -40,6 +40,14 @@ export const LOCATION_SYNC_KEY = 'sync_spoolman_location';
 export const UNASSIGNED_LOCATION_KEY = 'unassigned_spool_location';
 
 /**
+ * Settings key for "return spools to their home location": a spool's own
+ * location is saved to its `home_location` extra field when it is assigned to a
+ * tray and restored on unassign, ahead of the holding pen. Only consulted while
+ * LOCATION_SYNC_KEY is on.
+ */
+export const RETURN_TO_HOME_KEY = 'return_to_home_location';
+
+/**
  * How precise a real-tray label is (issue #85). 'tray' is the original
  * "X1C - AMS 1 Tray 3". 'ams' stops at the unit, "X1C - AMS 1", so every spool
  * in an AMS shares one location, which is how some users prefer to file them.
@@ -80,6 +88,16 @@ export async function getUnassignedLocation(): Promise<string> {
   const s = await prisma.settings.findUnique({ where: { key: UNASSIGNED_LOCATION_KEY } });
   const value = (s?.value ?? '').trim();
   return value ? truncateLocation(value) : '';
+}
+
+/**
+ * Whether unassigned spools go back to their saved home location. Gated on
+ * location sync like the holding pen, so it is inert on its own.
+ */
+export async function isReturnToHomeEnabled(): Promise<boolean> {
+  if (!(await isLocationSyncEnabled())) return false;
+  const s = await prisma.settings.findUnique({ where: { key: RETURN_TO_HOME_KEY } });
+  return s?.value === 'true';
 }
 
 /** Read a stored granularity, falling back to the original tray-level labels. */
@@ -667,5 +685,6 @@ export async function applyLocationSync(client: SpoolmanClient): Promise<boolean
   client.setLocationResolver(sync.resolver);
   client.setLocationMatcher(sync.matcher);
   client.setUnassignedLocation(await getUnassignedLocation());
+  client.setReturnToHomeLocation(await isReturnToHomeEnabled());
   return true;
 }

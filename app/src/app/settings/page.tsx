@@ -107,6 +107,8 @@ function SettingsContent() {
   const [unassignedSpoolLocation, setUnassignedSpoolLocation] = useState('');
   const [savedUnassignedLocation, setSavedUnassignedLocation] = useState('');
   const seededUnassignedLocation = useRef(false);
+  // Restore a spool's saved home location on unassign (ahead of the holding pen).
+  const [returnToHomeLocation, setReturnToHomeLocation] = useState(false);
 
   // QR base URL state
   const [qrBaseUrl, setQrBaseUrl] = useState('');
@@ -227,6 +229,9 @@ function SettingsContent() {
       }
       if (data.syncSpoolmanLocation !== undefined) {
         setSyncSpoolmanLocation(data.syncSpoolmanLocation);
+      }
+      if (data.returnToHomeLocation !== undefined) {
+        setReturnToHomeLocation(data.returnToHomeLocation);
       }
       if (data.locationGranularity === 'tray' || data.locationGranularity === 'ams') {
         setLocationGranularity(data.locationGranularity);
@@ -1438,6 +1443,44 @@ function SettingsContent() {
                         printers without an AMS are unaffected either way. Changing this updates the
                         spools SpoolmanSync has already filed, the next time the dashboard loads.
                       </p>
+                    </div>
+                  )}
+
+                  {/* Return to home — like the holding pen, only meaningful while
+                      location sync is on. */}
+                  {syncSpoolmanLocation && (
+                    <div className="ml-7 flex items-center space-x-3">
+                      <Checkbox
+                        id="return-to-home-location"
+                        checked={returnToHomeLocation}
+                        onCheckedChange={async (checked) => {
+                          const enabled = checked === true;
+                          setReturnToHomeLocation(enabled);
+                          try {
+                            const res = await fetch('/api/settings', {
+                              method: 'POST',
+                              headers: { 'Content-Type': 'application/json' },
+                              body: JSON.stringify({ type: 'return_to_home_location', enabled }),
+                            });
+                            if (!res.ok) throw new Error();
+                            toast.success(enabled ? 'Spools will return to their home location' : 'Return to home location disabled');
+                          } catch {
+                            setReturnToHomeLocation(!enabled);
+                            toast.error('Failed to save setting');
+                          }
+                        }}
+                      />
+                      <div>
+                        <Label htmlFor="return-to-home-location" className="text-sm font-medium cursor-pointer">
+                          Return spools to their home location
+                        </Label>
+                        <p className="text-xs text-muted-foreground">
+                          When a spool is assigned to a tray, its current location (e.g. a shelf) is
+                          saved to the spool&apos;s &quot;Home location&quot; field, and restored when the
+                          spool is removed from the tray. Spools without a saved home use the setting
+                          below. You can also edit the Home location field in Spoolman directly.
+                        </p>
+                      </div>
                     </div>
                   )}
 

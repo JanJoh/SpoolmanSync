@@ -5,6 +5,11 @@ All notable changes to SpoolmanSync will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Added
+- New "Return spools to their home location" setting, under the Spoolman location sync toggle in Settings. When a spool is assigned to a tray, its current location (for example a shelf) is saved to a new "Home location" extra field on the spool, and it is put back there when the spool leaves the tray. This takes precedence over "Location when unassigned", which still applies to spools with no saved home. Moving a spool between trays keeps the home it already has, the holding pen is never saved as a home, and a location you set by hand is never overwritten. The setting is off by default, and the field can also be edited directly in Spoolman.
+
 ## [1.6.14] - 2026-10-02
 
 ### Added

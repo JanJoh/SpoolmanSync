@@ -13,6 +13,7 @@ import { createActivityLog } from '@/lib/activity-log';
 import { isWebhookAuthEnabled } from '@/lib/webhook-secret';
 import {
   UNASSIGNED_LOCATION_KEY,
+  RETURN_TO_HOME_KEY,
   SPOOLMAN_LOCATION_MAX,
   LOCATION_GRANULARITY_KEY,
   parseLocationGranularity,
@@ -60,6 +61,7 @@ export async function GET() {
       const ignoreColorSetting = await prisma.settings.findUnique({ where: { key: 'ignore_color_mismatch' } });
       const syncLocationSetting = await prisma.settings.findUnique({ where: { key: 'sync_spoolman_location' } });
       const unassignedLocationSetting = await prisma.settings.findUnique({ where: { key: UNASSIGNED_LOCATION_KEY } });
+      const returnToHomeSetting = await prisma.settings.findUnique({ where: { key: RETURN_TO_HOME_KEY } });
       const locationGranularitySetting = await prisma.settings.findUnique({ where: { key: LOCATION_GRANULARITY_KEY } });
       const webhookAuthEnabled = await isWebhookAuthEnabled();
 
@@ -81,6 +83,7 @@ export async function GET() {
         ignoreColorMismatch: ignoreColorSetting?.value === 'true',
         syncSpoolmanLocation: syncLocationSetting?.value === 'true',
         unassignedSpoolLocation: unassignedLocationSetting?.value ?? '',
+        returnToHomeLocation: returnToHomeSetting?.value === 'true',
         locationGranularity: parseLocationGranularity(locationGranularitySetting?.value),
         webhookConfigured: webhookAuthEnabled,
       });
@@ -270,6 +273,7 @@ export async function GET() {
     const ignoreColorSetting = await prisma.settings.findUnique({ where: { key: 'ignore_color_mismatch' } });
     const syncLocationSetting = await prisma.settings.findUnique({ where: { key: 'sync_spoolman_location' } });
     const unassignedLocationSetting = await prisma.settings.findUnique({ where: { key: UNASSIGNED_LOCATION_KEY } });
+    const returnToHomeSetting = await prisma.settings.findUnique({ where: { key: RETURN_TO_HOME_KEY } });
     const locationGranularitySetting = await prisma.settings.findUnique({ where: { key: LOCATION_GRANULARITY_KEY } });
     const webhookAuthEnabled = await isWebhookAuthEnabled();
 
@@ -287,6 +291,7 @@ export async function GET() {
       ignoreColorMismatch: ignoreColorSetting?.value === 'true',
       syncSpoolmanLocation: syncLocationSetting?.value === 'true',
       unassignedSpoolLocation: unassignedLocationSetting?.value ?? '',
+      returnToHomeLocation: returnToHomeSetting?.value === 'true',
       locationGranularity: parseLocationGranularity(locationGranularitySetting?.value),
       webhookConfigured: webhookAuthEnabled,
     });
@@ -405,6 +410,21 @@ export async function POST(request: NextRequest) {
         update: { value: location },
       });
       return NextResponse.json({ success: true, location });
+    }
+
+    if (type === 'return_to_home_location') {
+      // Restore a spool's saved home location on unassign, ahead of the holding
+      // pen. Only consulted while sync_spoolman_location is on — see
+      // isReturnToHomeEnabled() — so it is inert on its own.
+      if (typeof body.enabled !== 'boolean') {
+        return NextResponse.json({ error: 'enabled must be a boolean' }, { status: 400 });
+      }
+      await prisma.settings.upsert({
+        where: { key: RETURN_TO_HOME_KEY },
+        create: { key: RETURN_TO_HOME_KEY, value: String(body.enabled) },
+        update: { value: String(body.enabled) },
+      });
+      return NextResponse.json({ success: true });
     }
 
     if (type === 'location_granularity') {
