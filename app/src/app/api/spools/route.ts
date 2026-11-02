@@ -4,6 +4,8 @@ import { SpoolmanClient } from '@/lib/api/spoolman';
 import { HomeAssistantClient } from '@/lib/api/homeassistant';
 import { createActivityLog } from '@/lib/activity-log';
 import { applyLocationSync } from '@/lib/spool-location';
+import { getAssignPromptSettings } from '@/lib/assign-prompt';
+import { resolvePendingOnManualAssign } from '@/lib/assign-prompt-flow';
 
 export async function GET() {
   try {
@@ -65,6 +67,17 @@ export async function POST(request: NextRequest) {
     await applyLocationSync(client);
 
     const updatedSpool = await client.assignSpoolToTray(spoolId, trayId);
+
+    // If this tray was waiting for "which spool?" (assign prompt), this answers
+    // it: learn the reported serial and withdraw the phone notification.
+    // Best-effort — the assignment itself has already succeeded.
+    try {
+      const promptSettings = await getAssignPromptSettings();
+      const ha = await HomeAssistantClient.fromConnection().catch(() => null);
+      await resolvePendingOnManualAssign(client, spoolId, trayId, promptSettings, ha);
+    } catch (err) {
+      console.warn('Could not resolve pending tray after manual assign:', err);
+    }
 
     // Log activity
     await createActivityLog({

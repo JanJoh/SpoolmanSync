@@ -109,6 +109,12 @@ export function generateHAConfig(
     ));
   }
 
+  // One printer-independent automation: forwards the buttons of the "which
+  // spool?" phone notification (assign prompt) to the webhook. Inert unless
+  // the "match unidentified spools" feature is enabled, since nothing else
+  // sends those actions.
+  if (automations.length > 0) automations.push(generateAssignChoiceAutomationYaml());
+
   return {
     automationsYaml: automations.join('\n'),
     configurationAdditions: configurationAdditions(printers.map(p => p.prefix), webhookUrl, webhookSecret),
@@ -192,6 +198,37 @@ ${creality
 }
 
 /**
+/**
+ * Forward assign-prompt notification buttons (action ids starting with
+ * SPOOLMANSYNC_ASSIGN_) from the HA mobile app to the webhook. One printer-
+ * independent automation; enabled only when "match unidentified spools" is on.
+ */
+export function generateAssignChoiceAutomationYaml(): string {
+  return `# =============================================================================
+# SpoolmanSync Automation: Assign Choice From Phone
+#
+# Forwards the buttons of the "which spool?" notification to SpoolmanSync.
+# Only does anything when "Match unidentified spools" is enabled in Settings.
+# =============================================================================
+- id: 'spoolmansync_assign_choice'
+  alias: SpoolmanSync - Assign Choice From Phone
+  description: Forward "which spool?" notification buttons to SpoolmanSync
+  mode: queued
+  triggers:
+    - trigger: event
+      event_type: mobile_app_notification_action
+  conditions:
+    - condition: template
+      value_template: >-
+        {{ trigger.event.data.action is string
+           and trigger.event.data.action.startswith('SPOOLMANSYNC_ASSIGN_') }}
+  actions:
+    - action: rest_command.spoolmansync_assign_choice
+      data:
+        choice: "{{ trigger.event.data.action }}"
+`;
+}
+
  * The rest_command the tray-change automations call.
  */
 function configurationAdditions(prefixes: string[], webhookUrl: string, webhookSecret: string = ''): string {
@@ -220,6 +257,17 @@ rest_command:
         "material": {{ material | default('') | to_json }},
         "color": {{ color | default('') | to_json }},
         "current_print_state": {{ current_print_state | default('') | to_json }}
+      }
+
+  spoolmansync_assign_choice:
+    url: "${webhookUrl}"
+    method: POST
+    headers:
+      Content-Type: "application/json"${secretHeader}
+    payload: >
+      {
+        "event": "assign_choice",
+        "action": "{{ choice }}"
       }
 `;
 }
