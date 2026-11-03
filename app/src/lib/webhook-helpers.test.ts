@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { classifyTrayState, lengthToWeight, isValidTrayUuid, isActivePrintState, isPhantomSerialReport, MATERIAL_DENSITY } from './webhook-helpers';
+import { classifyTrayState, lengthToWeight, isValidTrayUuid, isActivePrintState, isPhantomSerialReport, isExternalSpoolTray, MATERIAL_DENSITY } from './webhook-helpers';
 
 describe('classifyTrayState (issue #65 — never clear on transient states)', () => {
   it('treats unavailable/unknown/missing as transient (must NOT clear assignment)', () => {
@@ -96,5 +96,17 @@ describe('isPhantomSerialReport', () => {
   it('fails open without live state or without the attributes', () => {
     expect(isPhantomSerialReport(uuid, null)).toBe(false);
     expect(isPhantomSerialReport(uuid, { attributes: {} })).toBe(false);
+  });
+});
+
+describe('isExternalSpoolTray', () => {
+  it('recognises external spool unique ids and entity ids', () => {
+    expect(isExternalSpoolTray('X1C_00M09D482103405_ExternalSpool_external_spool')).toBe(true);
+    expect(isExternalSpoolTray('sensor.x1c_00m09d482103405_externalspool_external_spool')).toBe(true);
+  });
+
+  it('does not match AMS trays', () => {
+    expect(isExternalSpoolTray('X1C_00M09D482103405_AMS_19F06A580300880_tray_1')).toBe(false);
+    expect(isExternalSpoolTray('')).toBe(false);
   });
 });

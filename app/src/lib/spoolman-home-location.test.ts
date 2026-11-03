@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-import { SpoolmanClient, HOME_LOCATION_FIELD } from './api/spoolman';
+import { SpoolmanClient, HOME_LOCATION_FIELD, REFILL_FIELD } from './api/spoolman';
 
 /**
  * Behavioral tests for return-to-home: assignSpoolToTray saves the spool's own
@@ -167,5 +167,23 @@ describe('unassignSpoolFromTray — restoring the home location', () => {
     await makeClient({ pen: 'To sort' }).unassignSpoolFromTray(1);
 
     expect(patchBody(calls)!.location).toBe('To sort');
+  });
+});
+
+describe('assignSpoolToTray — refill flag', () => {
+  it('clears refill when a refill is loaded (it has been mounted)', async () => {
+    const calls = installFetch({ id: 1, extra: { [REFILL_FIELD]: 'true' }, location: 'Shelf 2' });
+    await makeClient().assignSpoolToTray(1, TRAY_A);
+    expect(extraOf(patchBody(calls)!)[REFILL_FIELD]).toBe('false');
+  });
+
+  it('leaves the field alone when it is false or absent', async () => {
+    let calls = installFetch({ id: 1, extra: { [REFILL_FIELD]: 'false' }, location: 'Shelf 2' });
+    await makeClient().assignSpoolToTray(1, TRAY_A);
+    expect(extraOf(patchBody(calls)!)[REFILL_FIELD]).toBe('false');
+
+    calls = installFetch({ id: 1, extra: {}, location: 'Shelf 2' });
+    await makeClient().assignSpoolToTray(1, TRAY_A);
+    expect(extraOf(patchBody(calls)!)).not.toHaveProperty(REFILL_FIELD);
   });
 });

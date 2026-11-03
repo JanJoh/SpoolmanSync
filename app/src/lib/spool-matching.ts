@@ -15,6 +15,12 @@ export interface TrayReport {
   color: string | undefined | null;
   /** True when the tray reports a valid spool serial (a Bambu RFID spool). */
   hasSerial: boolean;
+  /**
+   * True when the slot has an RFID reader (a Bambu AMS tray, not the external
+   * spool holder). Bambu filament, refills included, always carries a tag, so
+   * such a slot reporting no serial holds third-party filament.
+   */
+  readsRfid?: boolean;
 }
 
 export interface SpoolCandidate {
@@ -100,6 +106,10 @@ function isBambuVendor(spool: Spool): boolean {
   return /bambu/i.test(spool.filament?.vendor?.name || '');
 }
 
+function isRefill(spool: Spool): boolean {
+  return spool.extra?.['refill'] === 'true';
+}
+
 function hasBeenUsed(spool: Spool): boolean {
   return (spool.used_weight ?? 0) > 0 || !!spool.first_used;
 }
@@ -110,11 +120,14 @@ function hasBeenUsed(spool: Spool): boolean {
  * Excluded: archived and empty spools, spools already assigned to a tray, and
  * spools of another material family. For a tray reporting a serial, only Bambu
  * spools without a learned serial qualify (anything else would have matched or
- * cannot carry that tag). Spools whose colour is too far off are dropped; spools
- * with no colour on either side are kept but ranked last.
+ * cannot carry that tag). For an RFID-reading slot reporting no serial, Bambu
+ * spools are excluded (their tag would have been read). Spools whose colour is
+ * too far off are dropped; spools with no colour on either side are kept but
+ * ranked last.
  *
- * Ranking: closest colour, then opened spools before sealed ones, then most
- * recently used.
+ * Ranking: spools not flagged as refills (filament without a spool, so not yet
+ * mountable) first, then closest colour, then opened spools before sealed ones,
+ * then most recently used.
  */
 export function findSpoolCandidates(
   spools: Spool[],
@@ -131,6 +144,7 @@ export function findSpoolCandidates(
     if (decodeExtra(spool.extra?.['active_tray'])) continue;
     if (materialFamily(spool.filament?.material) !== family) continue;
     if (tray.hasSerial && (!isBambuVendor(spool) || decodeExtra(spool.extra?.['tag']))) continue;
+    if (!tray.hasSerial && tray.readsRfid && isBambuVendor(spool)) continue;
 
     const deltaE = colorDeltaE(tray.color, spool.filament?.color_hex);
     if (deltaE !== null && deltaE > maxDeltaE) continue;
@@ -138,6 +152,9 @@ export function findSpoolCandidates(
   }
 
   return candidates.sort((a, b) => {
+    const ra = isRefill(a.spool) ? 1 : 0;
+    const rb = isRefill(b.spool) ? 1 : 0;
+    if (ra !== rb) return ra - rb;
     const da = a.deltaE ?? Number.POSITIVE_INFINITY;
     const db = b.deltaE ?? Number.POSITIVE_INFINITY;
     if (da !== db) return da - db;

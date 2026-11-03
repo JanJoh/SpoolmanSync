@@ -130,6 +130,26 @@ describe('findSpoolCandidates', () => {
     expect(result.map(c => c.spool.id)).toEqual([bambu.id]);
   });
 
+  it('for an RFID slot reporting no serial, leaves Bambu spools out', () => {
+    const bambu = spool({ vendor: 'Bambu Lab', color: '057748' });
+    const other = spool({ vendor: 'Add:North', color: '057748' });
+    const result = findSpoolCandidates([bambu, other], { ...tray, readsRfid: true });
+    expect(result.map(c => c.spool.id)).toEqual([other.id]);
+  });
+
+  it('keeps Bambu spools for a slot without a reader (external spool)', () => {
+    const bambu = spool({ vendor: 'Bambu Lab', color: '057748' });
+    const result = findSpoolCandidates([bambu], { ...tray, readsRfid: false });
+    expect(result.map(c => c.spool.id)).toEqual([bambu.id]);
+  });
+
+  it('ranks refills last but still offers them', () => {
+    const refill = spool({ vendor: 'Bambu Lab', color: '057748', extra: { refill: 'true' } });
+    const mounted = spool({ vendor: 'Bambu Lab', color: '0C8C01', extra: { refill: 'false' } });
+    const result = findSpoolCandidates([refill, mounted], { ...tray, hasSerial: true, readsRfid: true });
+    expect(result.map(c => c.spool.id)).toEqual([mounted.id, refill.id]);
+  });
+
   it('returns nothing when the tray reports no material', () => {
     expect(findSpoolCandidates([spool({})], { material: '', color: 'ffffff', hasSerial: false })).toEqual([]);
   });

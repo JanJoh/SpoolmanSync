@@ -101,3 +101,11 @@ export function isPhantomSerialReport(
   const liveUuid = (attrs.tray_uuid ?? '').toString().toUpperCase();
   return liveUuid !== '' && liveUuid !== (reportedUuid ?? '').toString().toUpperCase();
 }
+
+/**
+ * True for an external spool holder slot ("…_ExternalSpool_external_spool",
+ * "sensor.…_externalspool_external_spool"). These slots have no RFID reader.
+ */
+export function isExternalSpoolTray(trayId: string | null | undefined): boolean {
+  return /externalspool|external_spool/i.test(trayId ?? '');
+}

@@ -142,6 +142,23 @@ export function buildAssignedNotification(
   };
 }
 
+/** Data for notify.<service>: usage arrived for a tray with no spool, so nothing was deducted. */
+export function buildUnmatchedUsageNotification(
+  trayId: string,
+  trayLabel: string,
+  grams: number,
+  baseUrl: string,
+): Record<string, unknown> {
+  return {
+    title: `${trayLabel}: ${grams.toFixed(1)} g not deducted`,
+    message: 'No spool is assigned to this tray, so the usage was not recorded. Assign the spool and deduct the grams by hand in Spoolman.',
+    data: {
+      tag: `${notificationTag(trayId)}-usage`,
+      ...(baseUrl && { url: `${baseUrl}/` }),
+    },
+  };
+}
+
 /** Send a notification through Home Assistant; failures are logged, never thrown. */
 export async function sendPhoneNotification(
   ha: HomeAssistantClient | null,

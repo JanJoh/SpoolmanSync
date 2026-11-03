@@ -327,6 +327,21 @@ function generateAutomationsYaml(
     # print-end and offline triggers are omitted. Usage is then only flushed on
     # tray changes, never at print end.`;
 
+  // Bambu printers drop the stage to idle/finished about 40 s before progress
+  // reports its final 100 %. Flushing straight away left that last 1 % in the
+  // meter, where it sat until the next tray change. Wait for 100 % (cancelled
+  // prints never get there, hence the timeout), give the meter a moment to
+  // follow, then re-read it.
+  const printEndSettle = entities.print_progress
+    ? `
+            - wait_template: "{{ states('${entities.print_progress}') | int(0) >= 100 }}"
+              timeout: "00:01:30"
+              continue_on_timeout: true
+            - delay: "00:00:02"
+            - variables:
+                tray_weight: "{{ states('sensor.spoolmansync_${prefix}_filament_usage_meter') | float(0) | round(2) }}"`
+    : '';
+
   return `# =============================================================================
 # SpoolmanSync Automation: Track Spool Usage
 #
@@ -507,7 +522,7 @@ function generateAutomationsYaml(
                 {{ trigger.id == 'print_end'
                    and trigger.from_state is not none
                    and trigger.from_state.state not in ['unavailable', 'unknown', 'idle', 'finished', 'none'] }}
-          sequence:
+          sequence:${printEndSettle}
             - choose:
                 - conditions:
                     - condition: template
@@ -612,7 +627,10 @@ function generateAutomationsYaml(
               data:
                 message: "SPOOLMANSYNC METER RESET (printer offline) | ${prefix}"
                 level: info
-  mode: single
+  # queued, not single: the print-end branch can wait up to ~90 s for the final
+  # progress tick, and tray changes in that window must still be flushed.
+  mode: queued
+  max: 10
 
 # =============================================================================
 # SpoolmanSync Automation: Tray Change Detection

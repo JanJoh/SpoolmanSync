@@ -634,3 +634,49 @@ describe('generateHAConfig — assign-choice forwarder', () => {
     expect(generateHAConfig([], 'http://hook', 'http://hook').automationsYaml).toBe('[]');
   });
 });
+
+describe('generateHAConfig — print end waits for the final progress tick', () => {
+  /**
+   * Bambu drops the stage to idle ~40 s before progress reports 100 %, so a
+   * flush on the stage change left the last 1 % in the meter until the next
+   * tray change.
+   */
+  type Step = { wait_template?: string; timeout?: string; continue_on_timeout?: boolean; delay?: string; variables?: Record<string, string>; choose?: unknown };
+  const printEndSequence = (yaml: string, prefix: string): Step[] => {
+    const parsed = parseYaml(yaml) as Array<{
+      id: string;
+      actions: Array<{ choose?: Array<{ conditions: Array<{ value_template: string }>; sequence: Step[] }> }>;
+    }>;
+    const automation = parsed.find(a => a.id === `spoolmansync_update_spool_${prefix}`)!;
+    return automation.actions.find(a => a.choose)!.choose!.find(b =>
+      b.conditions[0].value_template.includes("trigger.id == 'print_end'"))!.sequence;
+  };
+
+  it('Bambu: waits for 100 % (bounded), then re-reads the meter before flushing', () => {
+    const { automationsYaml } = generateHAConfig([bambuPrinter()], 'http://hook', 'http://hook');
+    const seq = printEndSequence(automationsYaml, 'x1c');
+    expect(seq[0].wait_template).toContain("states('sensor.x1c_print_progress')");
+    expect(seq[0].wait_template).toContain('>= 100');
+    expect(seq[0].timeout).toBe('00:01:30');
+    expect(seq[0].continue_on_timeout).toBe(true);
+    expect(seq[1].delay).toBeDefined();
+    expect(seq[2].variables!.tray_weight).toContain('sensor.spoolmansync_x1c_filament_usage_meter');
+    expect(seq[3].choose).toBeDefined();
+  });
+
+  it('Bambu: queued mode, so tray changes during the wait are not dropped', () => {
+    const { automationsYaml } = generateHAConfig([bambuPrinter()], 'http://hook', 'http://hook');
+    const parsed = parseYaml(automationsYaml) as Array<{ id: string; mode: string; max?: number }>;
+    const updateSpool = parsed.find(a => a.id === 'spoolmansync_update_spool_x1c')!;
+    expect(updateSpool.mode).toBe('queued');
+    expect(updateSpool.max).toBeGreaterThan(1);
+  });
+
+  it('Bambu without a progress entity: flushes straight away', () => {
+    const printer = { ...bambuPrinter(), print_progress_entity: undefined };
+    const { automationsYaml } = generateHAConfig([printer], 'http://hook', 'http://hook');
+    const seq = printEndSequence(automationsYaml, 'x1c');
+    expect(seq[0].wait_template).toBeUndefined();
+    expect(seq[0].choose).toBeDefined();
+  });
+});

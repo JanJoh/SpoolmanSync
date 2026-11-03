@@ -32,6 +32,8 @@ export interface UnidentifiedTray {
   color: string;
   /** Valid spool serial the tray reported, '' when none (or not a per-spool serial). */
   traySerial: string;
+  /** The slot has an RFID reader (see TrayReport.readsRfid). */
+  readsRfid?: boolean;
 }
 
 export type PromptOutcome =
@@ -62,6 +64,7 @@ export async function handleUnidentifiedTray(
     material: tray.material,
     color: tray.color,
     hasSerial: !!tray.traySerial,
+    readsRfid: tray.readsRfid,
   });
 
   const confident = settings.autoAssign ? pickConfidentCandidate(candidates) : null;

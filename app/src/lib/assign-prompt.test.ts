@@ -11,6 +11,7 @@ import {
   buildAssignedNotification,
   describeTray,
   MAX_CANDIDATE_BUTTONS,
+  buildUnmatchedUsageNotification,
 } from './assign-prompt';
 
 const spool = (id: number, remaining = 495): Spool => ({
@@ -109,5 +110,20 @@ describe('describeTray', () => {
 
   it('falls back to the id', () => {
     expect(describeTray(printers, 'sensor.unknown')).toBe('sensor.unknown');
+  });
+});
+
+describe('buildUnmatchedUsageNotification', () => {
+  it('names the tray and the grams, with its own tag', () => {
+    const n = buildUnmatchedUsageNotification('x1c_ams_128_tray_1', 'X1C · AMS HT Tray 1', 154.73, 'http://ha:3000');
+    expect(n.title).toBe('X1C · AMS HT Tray 1: 154.7 g not deducted');
+    const data = n.data as { tag: string; url?: string };
+    expect(data.tag).toBe('spoolmansync-x1c_ams_128_tray_1-usage');
+    expect(data.url).toBe('http://ha:3000/');
+  });
+
+  it('omits the link without a base URL', () => {
+    const n = buildUnmatchedUsageNotification('t', 'T', 1, '');
+    expect((n.data as { url?: string }).url).toBeUndefined();
   });
 });

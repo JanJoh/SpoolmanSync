@@ -6,11 +6,11 @@ import { spoolEvents, SPOOL_UPDATED, SpoolUpdateEvent } from '@/lib/events';
 import { createActivityLog } from '@/lib/activity-log';
 import { checkAndUpdateAlerts } from '@/lib/alerts';
 import { getWebhookSecret, isWebhookAuthEnabled, tokensMatch, WEBHOOK_TOKEN_HEADER } from '@/lib/webhook-secret';
-import { isValidTrayUuid, lengthToWeight, classifyTrayState, isActivePrintState, isPhantomSerialReport } from '@/lib/webhook-helpers';
+import { isValidTrayUuid, lengthToWeight, classifyTrayState, isActivePrintState, isPhantomSerialReport, isExternalSpoolTray } from '@/lib/webhook-helpers';
 import { trayCarriesSpoolSerial } from '@/lib/creality';
 import { applyLocationSync } from '@/lib/spool-location';
 import { clearPendingTray } from '@/lib/pending-trays';
-import { getAssignPromptSettings, describeTray, spoolTitle, clearPhoneNotification } from '@/lib/assign-prompt';
+import { getAssignPromptSettings, describeTray, spoolTitle, clearPhoneNotification, buildUnmatchedUsageNotification, sendPhoneNotification } from '@/lib/assign-prompt';
 import { handleUnidentifiedTray, applyAssignChoice } from '@/lib/assign-prompt-flow';
 
 /**
@@ -144,6 +144,16 @@ export async function POST(request: NextRequest) {
           message: `Usage of ${Number(weightToDeduct).toFixed(2)}g on ${active_tray_id} was not deducted: no spool assigned to this tray`,
           details: { trayId: active_tray_id, weight: weightToDeduct, trayUuid: tray_uuid },
         });
+        // Tell the phone too: a dropped deduction is easy to fix the same day and
+        // hard to reconstruct later.
+        const promptSettings = await getAssignPromptSettings();
+        if (promptSettings.notifyService) {
+          const ha = await HomeAssistantClient.fromConnection().catch(() => null);
+          const printers = ha ? await ha.discoverPrinters().catch(() => []) : [];
+          await sendPhoneNotification(ha, promptSettings.notifyService, buildUnmatchedUsageNotification(
+            trayUniqueId, describeTray(printers, active_tray_id), Number(weightToDeduct), promptSettings.baseUrl,
+          ));
+        }
         return NextResponse.json({
           status: 'no_match',
           message: `No spool assigned to tray ${active_tray_id}. Assign a spool in SpoolmanSync first.`,
@@ -459,7 +469,8 @@ export async function POST(request: NextRequest) {
         if (promptSettings.enabled) {
           const ha = await HomeAssistantClient.fromConnection().catch(() => null);
           const printers = ha ? await ha.discoverPrinters().catch(() => []) : [];
-          const serial = isValidTrayUuid(tray_uuid) && await traySupportsSerial(tray_entity_id) ? tray_uuid : '';
+          const readsSerial = await traySupportsSerial(tray_entity_id);
+          const serial = isValidTrayUuid(tray_uuid) && readsSerial ? tray_uuid : '';
           const outcome = await handleUnidentifiedTray(client, spools, {
             trayId: trayUniqueId,
             entityId: tray_entity_id,
@@ -467,6 +478,7 @@ export async function POST(request: NextRequest) {
             material: material || '',
             color: color || '',
             traySerial: serial,
+            readsRfid: readsSerial && !isExternalSpoolTray(trayUniqueId) && !isExternalSpoolTray(tray_entity_id),
           }, promptSettings, ha);
 
           if (outcome.action === 'auto_assigned') {
