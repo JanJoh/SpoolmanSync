@@ -46,7 +46,8 @@ export function lengthToWeight(lengthCm: number, material?: string): number {
  * Classify a printer-reported tray `name` into how the webhook should treat it
  * (issue #65). This is the single guard that decides whether a spool assignment
  * may be cleared:
- *  - 'transient': HA doesn't know yet (unavailable/unknown) or sent no name.
+ *  - 'transient': HA doesn't know yet (unavailable/unknown), sent no name, or
+ *    the AMS is still reading the RFID tag of a freshly loaded spool ("?").
  *    NEVER clear an assignment on this — it's a reconnect/resync glitch.
  *  - 'empty': a real empty-slot signal — literal "Empty" (ha-bambulab) or a blank
  *    name (ha_creality_ws). The webhook still re-queries live HA state before
@@ -55,7 +56,7 @@ export function lengthToWeight(lengthCm: number, material?: string): number {
  */
 export function classifyTrayState(name: string | null | undefined): 'transient' | 'empty' | 'present' {
   const nameLower = (name ?? '').toString().toLowerCase();
-  if (name === undefined || name === null || nameLower === 'unavailable' || nameLower === 'unknown') {
+  if (name === undefined || name === null || nameLower === 'unavailable' || nameLower === 'unknown' || name === '?') {
     return 'transient';
   }
   if (nameLower === 'empty' || name === '') {

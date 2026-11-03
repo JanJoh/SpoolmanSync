@@ -8,6 +8,7 @@ describe('classifyTrayState (issue #65 — never clear on transient states)', ()
     expect(classifyTrayState('unavailable')).toBe('transient');
     expect(classifyTrayState('unknown')).toBe('transient');
     expect(classifyTrayState('Unavailable')).toBe('transient'); // case-insensitive
+    expect(classifyTrayState('?')).toBe('transient'); // AMS still reading the RFID tag
     expect(classifyTrayState('UNKNOWN')).toBe('transient');
   });
 
