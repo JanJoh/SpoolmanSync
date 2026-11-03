@@ -6,7 +6,7 @@ import { spoolEvents, SPOOL_UPDATED, SpoolUpdateEvent } from '@/lib/events';
 import { createActivityLog } from '@/lib/activity-log';
 import { checkAndUpdateAlerts } from '@/lib/alerts';
 import { getWebhookSecret, isWebhookAuthEnabled, tokensMatch, WEBHOOK_TOKEN_HEADER } from '@/lib/webhook-secret';
-import { isValidTrayUuid, lengthToWeight, classifyTrayState, isActivePrintState } from '@/lib/webhook-helpers';
+import { isValidTrayUuid, lengthToWeight, classifyTrayState, isActivePrintState, isPhantomSerialReport } from '@/lib/webhook-helpers';
 import { trayCarriesSpoolSerial } from '@/lib/creality';
 import { applyLocationSync } from '@/lib/spool-location';
 import { clearPendingTray } from '@/lib/pending-trays';
@@ -139,6 +139,11 @@ export async function POST(request: NextRequest) {
 
       if (!matchedSpool) {
         console.warn(`No spool assigned to tray ${active_tray_id}`);
+        await createActivityLog({
+          type: 'spool_usage_unmatched',
+          message: `Usage of ${Number(weightToDeduct).toFixed(2)}g on ${active_tray_id} was not deducted: no spool assigned to this tray`,
+          details: { trayId: active_tray_id, weight: weightToDeduct, trayUuid: tray_uuid },
+        });
         return NextResponse.json({
           status: 'no_match',
           message: `No spool assigned to tray ${active_tray_id}. Assign a spool in SpoolmanSync first.`,
@@ -389,6 +394,24 @@ export async function POST(request: NextRequest) {
       // Tray has filament - try to auto-match by spool serial number
       // Uses the `tag` field (stored on first spool_usage)
       if (isValidTrayUuid(tray_uuid) && await traySupportsSerial(tray_entity_id)) {
+        // Don't trust a serial on a slot that says it is empty, or one that has
+        // already changed back (phantom report, see isPhantomSerialReport).
+        let live: { attributes?: Record<string, unknown> } | null = null;
+        try {
+          const haClient = await HomeAssistantClient.fromConnection();
+          live = haClient ? await haClient.getState(tray_entity_id) : null;
+        } catch (err) {
+          console.warn('Could not re-query live HA state before serial match:', err);
+        }
+        if (isPhantomSerialReport(tray_uuid, live)) {
+          await createActivityLog({
+            type: 'tray_change_ignored',
+            message: `Ignored serial ${tray_uuid} on ${tray_entity_id}: slot reports empty or serial no longer present — assignment preserved`,
+            details: { trayId: tray_entity_id, reason: 'phantom_serial', trayUuid: tray_uuid },
+          });
+          return NextResponse.json({ status: 'ignored', reason: 'phantom_serial' });
+        }
+
         const matchedSpool = await client.findSpoolByTag(tray_uuid);
 
         if (matchedSpool) {

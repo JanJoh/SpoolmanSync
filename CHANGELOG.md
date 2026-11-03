@@ -12,6 +12,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - New "Match unidentified spools and ask which one was loaded" setting, under Sync behavior in Settings. When a tray reports filament that matches no spool by serial (a third-party spool, or a Bambu spool whose serial SpoolmanSync has not learned yet), SpoolmanSync looks for spools of the same material family and a similar colour. Vendor product lines count as their base material, so "E-PLA" and "HT-PLA" match a PLA tray, while "PLA-CF" stays separate. A clear match is assigned automatically, which you can switch off. Otherwise your phone gets a Home Assistant notification with a button for each of the three most likely spools. Opening a spool's page from its NFC sticker or QR label also answers the question, through a new "Just loaded" card at the top of that page. A Bambu spool identified this way has its serial remembered, so the next time it is recognised automatically. The question is withdrawn when the tray is assigned some other way or emptied again, and it expires after 30 minutes (configurable).
 - Generated Home Assistant config gains one automation (`spoolmansync_assign_choice`) and one `rest_command` that forward the notification's buttons to SpoolmanSync. They do nothing unless the setting above is on. Re-run Configure Automations to get them.
 
+### Fixed
+- An empty slot that briefly reports another tray's spool serial no longer steals that spool's assignment. Seen on an X1C with an AMS HT, where the empty external slot echoed the HT spool's serial for about a second, moving the spool off the HT so the next print's usage was never deducted. The live tray state is now checked before matching by serial, and the report is ignored if the slot is empty or the serial is already gone.
+- Usage that arrives for a tray with no spool assigned is now written to the activity log instead of being dropped silently.
+
 ## [1.6.14] - 2026-10-02
 
 ### Added

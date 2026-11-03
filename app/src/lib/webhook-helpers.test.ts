@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { classifyTrayState, lengthToWeight, isValidTrayUuid, isActivePrintState, MATERIAL_DENSITY } from './webhook-helpers';
+import { classifyTrayState, lengthToWeight, isValidTrayUuid, isActivePrintState, isPhantomSerialReport, MATERIAL_DENSITY } from './webhook-helpers';
 
 describe('classifyTrayState (issue #65 — never clear on transient states)', () => {
   it('treats unavailable/unknown/missing as transient (must NOT clear assignment)', () => {
@@ -74,5 +74,26 @@ describe('isActivePrintState', () => {
     for (const state of ['printing', 'running', 'paused', 'pause', 'prepare', 'slicing', 'auto_bed_leveling']) {
       expect(isActivePrintState(state)).toBe(true);
     }
+  });
+});
+
+describe('isPhantomSerialReport', () => {
+  const uuid = 'FD62C5377B0A407FA1E42EFD2F88AD63';
+
+  it('rejects a serial on a slot that flags itself empty', () => {
+    expect(isPhantomSerialReport(uuid, { attributes: { empty: true, tray_uuid: uuid } })).toBe(true);
+  });
+
+  it('rejects a serial that has already reverted in live state', () => {
+    expect(isPhantomSerialReport(uuid, { attributes: { empty: false, tray_uuid: '00000000000000000000000000000000' } })).toBe(true);
+  });
+
+  it('accepts a serial that is still present on a loaded slot', () => {
+    expect(isPhantomSerialReport(uuid, { attributes: { empty: false, tray_uuid: uuid.toLowerCase() } })).toBe(false);
+  });
+
+  it('fails open without live state or without the attributes', () => {
+    expect(isPhantomSerialReport(uuid, null)).toBe(false);
+    expect(isPhantomSerialReport(uuid, { attributes: {} })).toBe(false);
   });
 });
