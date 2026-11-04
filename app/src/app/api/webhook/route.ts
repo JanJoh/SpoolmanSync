@@ -6,7 +6,7 @@ import { spoolEvents, SPOOL_UPDATED, SpoolUpdateEvent } from '@/lib/events';
 import { createActivityLog } from '@/lib/activity-log';
 import { checkAndUpdateAlerts } from '@/lib/alerts';
 import { getWebhookSecret, isWebhookAuthEnabled, tokensMatch, WEBHOOK_TOKEN_HEADER } from '@/lib/webhook-secret';
-import { isValidTrayUuid, lengthToWeight, classifyTrayState, isActivePrintState, isPhantomSerialReport, isExternalSpoolTray } from '@/lib/webhook-helpers';
+import { isValidTrayUuid, lengthToWeight, classifyTrayState, isActivePrintState, isPhantomSerialReport, isExternalSpoolTray, liveReportsEmpty } from '@/lib/webhook-helpers';
 import { trayCarriesSpoolSerial } from '@/lib/creality';
 import { applyLocationSync } from '@/lib/spool-location';
 import { clearPendingTray } from '@/lib/pending-trays';
@@ -468,6 +468,17 @@ export async function POST(request: NextRequest) {
         const promptSettings = await getAssignPromptSettings();
         if (promptSettings.enabled) {
           const ha = await HomeAssistantClient.fromConnection().catch(() => null);
+          // An empty slot that still shows a filament profile (external spool)
+          // must not be matched on material and colour.
+          const liveTray = ha ? await ha.getState(tray_entity_id).catch(() => null) : null;
+          if (liveReportsEmpty(liveTray)) {
+            await createActivityLog({
+              type: 'tray_change_ignored',
+              message: `Skipped colour match on ${tray_entity_id}: slot reports empty`,
+              details: { trayId: tray_entity_id, reason: 'slot_empty', material, color },
+            });
+            return NextResponse.json({ status: 'ignored', reason: 'slot_empty' });
+          }
           const printers = ha ? await ha.discoverPrinters().catch(() => []) : [];
           const readsSerial = await traySupportsSerial(tray_entity_id);
           const serial = isValidTrayUuid(tray_uuid) && readsSerial ? tray_uuid : '';

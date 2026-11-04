@@ -103,6 +103,16 @@ export function isPhantomSerialReport(
 }
 
 /**
+ * True when the tray's live HA state flags the slot as empty. The Bambu
+ * external spool slot keeps its filament profile (name, type, colour) after
+ * the filament is pulled, so the name alone can't tell an empty slot from a
+ * loaded one. Fails open (false) without live state.
+ */
+export function liveReportsEmpty(live: { attributes?: Record<string, unknown> } | null | undefined): boolean {
+  return live?.attributes?.empty === true;
+}
+
+/**
  * True for an external spool holder slot ("…_ExternalSpool_external_spool",
  * "sensor.…_externalspool_external_spool"). These slots have no RFID reader.
  */

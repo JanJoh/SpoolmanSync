@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { classifyTrayState, lengthToWeight, isValidTrayUuid, isActivePrintState, isPhantomSerialReport, isExternalSpoolTray, MATERIAL_DENSITY } from './webhook-helpers';
+import { classifyTrayState, lengthToWeight, isValidTrayUuid, isActivePrintState, isPhantomSerialReport, isExternalSpoolTray, liveReportsEmpty, MATERIAL_DENSITY } from './webhook-helpers';
 
 describe('classifyTrayState (issue #65 — never clear on transient states)', () => {
   it('treats unavailable/unknown/missing as transient (must NOT clear assignment)', () => {
@@ -108,5 +108,20 @@ describe('isExternalSpoolTray', () => {
   it('does not match AMS trays', () => {
     expect(isExternalSpoolTray('X1C_00M09D482103405_AMS_19F06A580300880_tray_1')).toBe(false);
     expect(isExternalSpoolTray('')).toBe(false);
+  });
+});
+
+describe('liveReportsEmpty', () => {
+  it('is true when the slot flags itself empty, even with a filament profile', () => {
+    expect(liveReportsEmpty({ attributes: { empty: true, name: 'Bambu PETG-CF', type: 'PETG-CF' } })).toBe(true);
+  });
+
+  it('is false for a loaded slot', () => {
+    expect(liveReportsEmpty({ attributes: { empty: false, name: 'Bambu PETG-CF' } })).toBe(false);
+  });
+
+  it('fails open without live state', () => {
+    expect(liveReportsEmpty(null)).toBe(false);
+    expect(liveReportsEmpty({})).toBe(false);
   });
 });

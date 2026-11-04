@@ -22,6 +22,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - An empty slot that briefly reports another tray's spool serial no longer steals that spool's assignment. Seen on an X1C with an AMS HT, where the empty external slot echoed the HT spool's serial for about a second, moving the spool off the HT so the next print's usage was never deducted. The live tray state is now checked before matching by serial, and the report is ignored if the slot is empty or the serial is already gone.
 - Usage that arrives for a tray with no spool assigned is now written to the activity log instead of being dropped silently.
 - A freshly loaded spool no longer triggers an empty "which spool?" prompt while the AMS is still reading its RFID tag (the tray briefly shows "?"). That state is now ignored like unavailable/unknown.
+- An empty external spool slot is no longer auto-assigned a spool by material and colour. The slot keeps its filament profile after the filament is pulled, so a state change there looked like a new untagged spool. The colour match now checks the live tray state and skips slots that report empty.
 
 ## [1.6.14] - 2026-10-02
 
