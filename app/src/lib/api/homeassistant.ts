@@ -39,11 +39,15 @@ export interface HAPrinter {
   prefix: string;  // Stable prefix for YAML entity naming (derived from unique_id)
   entry_id?: string;  // HA config entry this printer belongs to — the stable identity
                       // used to match printers the user removed (see hidden-printers.ts)
+  device_id?: string;  // HA device of the printer itself, for services that target one
   ams_units: HAAMS[];
   external_spools: HATray[];
   current_stage_entity?: string;
   print_weight_entity?: string;
   print_progress_entity?: string;
+  job_name_entity?: string;    // Bambu subtask_name: the job the printer is running
+  gcode_file_entity?: string;  // Bambu gcode_file
+  skipped_objects_entity?: string;  // Bambu: how many objects the user skipped mid-print
   used_material_entity?: string;  // Creality's used_material_length sensor (cm)
   is_virtual?: boolean;  // True for user-defined virtual printers (dry boxes/dryers)
 }
@@ -117,6 +121,16 @@ export function deviceConfigEntryId(device: {
     || device.primary_config_entry
     || device.config_entries?.[0]
     || undefined;
+}
+
+/**
+ * Match a Creality entity by the key its entity_id ends with, allowing the
+ * `_2`, `_3` suffix Home Assistant adds when an object_id is already taken (two
+ * printers of the same model with no hostname, say). Missing the suffix made
+ * such a printer invisible: never listed, never assignable, never tracked.
+ */
+function crealityKey(key: string): RegExp {
+  return new RegExp(`_${key}(?:_\\d+)?$`);
 }
 
 /**
@@ -643,6 +657,17 @@ export class HomeAssistantClient {
     return response.json();
   }
 
+  /** Base URL this client talks to (the Supervisor proxy in add-on mode). */
+  get url(): string {
+    return this.baseUrl;
+  }
+
+  /** A currently valid access token, for the usage tracker's long-lived WebSocket. */
+  async currentAccessToken(): Promise<string | null> {
+    await this.ensureValidToken();
+    return this.accessToken;
+  }
+
   /**
    * Check if connection is valid
    */
@@ -945,11 +970,15 @@ export class HomeAssistantClient {
         state: printerState?.state || 'unknown',
         prefix,
         entry_id: deviceConfigEntryId(printerDevice),
+        device_id: bestPrinterEntity.device_id ?? undefined,
         ams_units: amsUnits,
         external_spools: externalSpools,
         current_stage_entity: findPrinterEntity('stage')?.entity_id,
         print_weight_entity: findPrinterEntity('print_weight')?.entity_id,
         print_progress_entity: findPrinterEntity('print_progress')?.entity_id,
+        job_name_entity: findPrinterEntity('subtask_name')?.entity_id,
+        gcode_file_entity: findPrinterEntity('gcode_file')?.entity_id,
+        skipped_objects_entity: findPrinterEntity('skipped_objects')?.entity_id,
       };
 
       printers.push(printer);
@@ -1012,7 +1041,7 @@ export class HomeAssistantClient {
 
     // Find printer devices by print_status entity
     const printerEntities = crealityEntities.filter(e =>
-      e.entity_id.endsWith('_print_status')
+      crealityKey('print_status').test(e.entity_id)
     );
 
     const seenDevices = new Set<string>();
@@ -1025,10 +1054,11 @@ export class HomeAssistantClient {
       const printerState = stateMap.get(printerEntity.entity_id);
       const printerDevice = devices.find(d => d.id === printerEntity.device_id);
 
-      // Derive prefix from entity_id: remove "sensor." prefix and "_print_status" suffix
+      // Derive prefix from entity_id: remove "sensor." prefix and "_print_status"
+      // suffix. A collision suffix is kept: it is what tells two such printers apart.
       const prefix = printerEntity.entity_id
         .replace(/^sensor\./, '')
-        .replace(/_print_status$/, '');
+        .replace(/_print_status(_\d+)?$/, '$1');
 
       const name = printerDevice?.name_by_user || printerDevice?.name || prefix;
 
@@ -1044,7 +1074,7 @@ export class HomeAssistantClient {
       }
 
       // Find CFS slot entities by pattern matching
-      const cfsSlotPattern = /cfs_box_(\d+)_slot_(\d+)_filament$/;
+      const cfsSlotPattern = /cfs_box_(\d+)_slot_(\d+)_filament(?:_\d+)?$/;
       const slotFilamentEntities = allPrinterEntities.filter(e =>
         cfsSlotPattern.test(e.entity_id)
       );
@@ -1117,10 +1147,10 @@ export class HomeAssistantClient {
 
       // Find print-related entities
       const usedMaterialEntity = allPrinterEntities.find(e =>
-        e.entity_id.endsWith('_used_material_length')
+        crealityKey('used_material_length').test(e.entity_id)
       );
       const printProgressEntity = allPrinterEntities.find(e =>
-        e.entity_id.endsWith('_print_progress')
+        crealityKey('print_progress').test(e.entity_id)
       );
 
       printers.push({
@@ -1130,6 +1160,7 @@ export class HomeAssistantClient {
         state: printerState?.state || 'unknown',
         prefix,
         entry_id: deviceConfigEntryId(printerDevice),
+        device_id: printerEntity.device_id,
         ams_units: amsUnits,
         external_spools: externalSpools,
         print_progress_entity: printProgressEntity?.entity_id,
@@ -1166,6 +1197,12 @@ export class HomeAssistantClient {
       }
     }
     return map;
+  }
+
+  /** Remove entries from HA's entity registry (orphans whose configuration is gone). */
+  async removeRegistryEntities(entityIds: string[]): Promise<void> {
+    if (entityIds.length === 0) return;
+    await this.wsCommand(entityIds.map(entity_id => ({ type: 'config/entity_registry/remove', entity_id })));
   }
 
   /**
@@ -1473,7 +1510,7 @@ function getEffectiveTranslationKey(entity: EntityRegistryEntry): string | null 
 
   // Fallback: extract known key from unique_id suffix (old ha-bambulab without translation_key)
   const knownKeys = [
-    'print_status', 'print_weight', 'print_progress', 'print_length',
+    'print_status', 'print_weight', 'print_progress', 'print_length', 'subtask_name', 'gcode_file',
     'tray_1', 'tray_2', 'tray_3', 'tray_4',
     'external_spool', 'humidity_index', 'active_tray', 'stage',
   ];

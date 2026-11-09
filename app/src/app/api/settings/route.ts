@@ -11,6 +11,7 @@ import {
   completeHAOnboarding,
 } from '@/lib/api/homeassistant';
 import { createActivityLog } from '@/lib/activity-log';
+import { reconnectUsageTracker } from '@/lib/usage/tracker';
 import { isWebhookAuthEnabled } from '@/lib/webhook-secret';
 import {
   UNASSIGNED_LOCATION_KEY,
@@ -192,6 +193,7 @@ export async function GET() {
               },
             });
             console.log('HA onboarding complete, service account credentials stored');
+            reconnectUsageTracker();
 
             // Store admin login credentials for users to access HA
             if (result.servicePassword) {
@@ -374,6 +376,7 @@ export async function POST(request: NextRequest) {
           expiresAt: result.expiresAt,
         },
       });
+      reconnectUsageTracker();
 
       // Update stored admin credentials so future auto-recovery uses the new password
       await prisma.settings.upsert({
@@ -656,6 +659,7 @@ export async function DELETE(request: NextRequest) {
 
     if (type === 'homeassistant') {
       await prisma.hAConnection.deleteMany();
+      reconnectUsageTracker();
 
       // Log activity
       await createActivityLog({

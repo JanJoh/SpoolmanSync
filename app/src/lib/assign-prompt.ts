@@ -146,12 +146,13 @@ export function buildAssignedNotification(
 export function buildUnmatchedUsageNotification(
   trayId: string,
   trayLabel: string,
-  grams: number,
+  amount: number,
   baseUrl: string,
+  unit: 'g' | 'cm' = 'g',
 ): Record<string, unknown> {
   return {
-    title: `${trayLabel}: ${grams.toFixed(1)} g not deducted`,
-    message: 'No spool is assigned to this tray, so the usage was not recorded. Assign the spool and deduct the grams by hand in Spoolman.',
+    title: `${trayLabel}: ${amount.toFixed(1)} ${unit} not deducted`,
+    message: 'No spool is assigned to this tray, so the usage was not recorded. Assign the spool and deduct it by hand in Spoolman.',
     data: {
       tag: `${notificationTag(trayId)}-usage`,
       ...(baseUrl && { url: `${baseUrl}/` }),
