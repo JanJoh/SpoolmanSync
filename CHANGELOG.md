@@ -5,7 +5,9 @@ All notable changes to SpoolmanSync will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [Unreleased]
+## [2.0.0-jj.1] - 2026-11-09
+
+> JanJoh fork on top of upstream 2.0.0. Read the 2.0.0 upgrade note below: re-run **Configure Automations** and restart Home Assistant after updating.
 
 ### Added
 - New "Return spools to their home location" setting, under the Spoolman location sync toggle in Settings. When a spool is assigned to a tray, its current location (for example a shelf) is saved to a new "Home location" extra field on the spool, and it is put back there when the spool leaves the tray. This takes precedence over "Location when unassigned", which still applies to spools with no saved home. Moving a spool between trays keeps the home it already has, the holding pen is never saved as a home, and a location you set by hand is never overwritten. The setting is off by default, and the field can also be edited directly in Spoolman.
@@ -15,12 +17,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Changed
 - Spool matching knows about refills (an optional boolean `refill` extra field marking filament bought without a spool). Refills are ranked after other candidates, and the flag is cleared when a refill is assigned to a tray, since loading it means it has been mounted.
 - An AMS slot with an RFID reader that reports no serial no longer offers Bambu Lab spools as candidates: Bambu filament carries a tag, so the spool must be third-party. The external spool holder, which has no reader, still offers them.
-- When usage arrives for a tray with no spool assigned, the phone gets a notification (on the assign-prompt notify service) saying how many grams were not deducted.
-- At print end the generated update automation now waits up to 90 s for progress to reach 100 % before flushing. Bambu printers report idle about 40 s before the final progress tick, which left the last 1 % in the meter until the next tray change. The automation runs in queued mode so tray changes during the wait are still flushed. Re-run Configure Automations to get this.
+- When a print used filament from a tray with no spool assigned, the phone also gets a notification (on the assign-prompt notify service) saying how much was not deducted, once per print and tray. 2.0.0 already flags it on the print and in the Logs.
 
 ### Fixed
 - An empty slot that briefly reports another tray's spool serial no longer steals that spool's assignment. Seen on an X1C with an AMS HT, where the empty external slot echoed the HT spool's serial for about a second, moving the spool off the HT so the next print's usage was never deducted. The live tray state is now checked before matching by serial, and the report is ignored if the slot is empty or the serial is already gone.
-- Usage that arrives for a tray with no spool assigned is now written to the activity log instead of being dropped silently.
 - A freshly loaded spool no longer triggers an empty "which spool?" prompt while the AMS is still reading its RFID tag (the tray briefly shows "?"). That state is now ignored like unavailable/unknown.
 - An empty external spool slot is no longer auto-assigned a spool by material and colour. The slot keeps its filament profile after the filament is pulled, so a state change there looked like a new untagged spool. The colour match now checks the live tray state and skips slots that report empty.
 

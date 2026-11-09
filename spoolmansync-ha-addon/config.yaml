@@ -1,5 +1,5 @@
 name: SpoolmanSync (JanJoh fork)
-version: "2.0.0"
+version: "2.0.0-jj.1"
 slug: spoolmansync-ha-addon
 description: Automatic filament tracking for Bambu Lab and Creality printers with Spoolman (fork with home locations and colour matching)
 url: https://github.com/JanJoh/SpoolmanSync
