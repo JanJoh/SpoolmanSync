@@ -1253,7 +1253,7 @@ export class HomeAssistantClient {
       headers['Authorization'] = `Bearer ${this.accessToken}`;
     }
 
-    const response = await fetch(`${this.baseUrl}/api/config/config_entries/flow/${flowId}`, {
+    const response = await fetch(`${this.baseUrl}/api/config/config_entries/flow/${encodeURIComponent(flowId)}`, {
       method: 'POST',
       headers,
       body: JSON.stringify(userInput),
@@ -1299,14 +1299,14 @@ export class HomeAssistantClient {
    * Get the current state of a config flow
    */
   async getConfigFlow(flowId: string): Promise<ConfigFlowResult> {
-    return this.fetch(`/config/config_entries/flow/${flowId}`);
+    return this.fetch(`/config/config_entries/flow/${encodeURIComponent(flowId)}`);
   }
 
   /**
    * Delete/abort a config flow
    */
   async deleteConfigFlow(flowId: string): Promise<void> {
-    await this.fetch(`/config/config_entries/flow/${flowId}`, {
+    await this.fetch(`/config/config_entries/flow/${encodeURIComponent(flowId)}`, {
       method: 'DELETE',
     });
   }
@@ -1316,7 +1316,7 @@ export class HomeAssistantClient {
    */
   async getConfigEntries(domain?: string): Promise<ConfigEntry[]> {
     const url = domain
-      ? `/config/config_entries/entry?domain=${domain}`
+      ? `/config/config_entries/entry?domain=${encodeURIComponent(domain)}`
       : '/config/config_entries/entry';
     return this.fetch(url);
   }
@@ -1325,7 +1325,7 @@ export class HomeAssistantClient {
    * Delete a config entry
    */
   async deleteConfigEntry(entryId: string): Promise<void> {
-    await this.fetch(`/config/config_entries/entry/${entryId}`, {
+    await this.fetch(`/config/config_entries/entry/${encodeURIComponent(entryId)}`, {
       method: 'DELETE',
     });
   }

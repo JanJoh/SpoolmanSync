@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import prisma from '@/lib/db';
 import { SpoolmanClient } from '@/lib/api/spoolman';
+import { trimTrailingSlashes } from '@/lib/utils';
 import {
   isEmbeddedMode,
   isAddonMode,
@@ -41,7 +42,7 @@ export async function GET() {
 
       // Auto-configure Spoolman from addon config if not already set in DB
       let activeSpoolmanConnection = spoolmanConnection;
-      const envSpoolmanUrl = process.env.SPOOLMAN_URL?.replace(/\/+$/, '');
+      const envSpoolmanUrl = process.env.SPOOLMAN_URL && trimTrailingSlashes(process.env.SPOOLMAN_URL);
       if (!activeSpoolmanConnection && envSpoolmanUrl) {
         try {
           const spoolmanClient = new SpoolmanClient(envSpoolmanUrl);
@@ -563,7 +564,7 @@ export async function POST(request: NextRequest) {
 
     if (type === 'qr_base_url') {
       // Save QR code base URL override
-      const qrBaseUrl = (url || '').trim().replace(/\/+$/, '');
+      const qrBaseUrl = trimTrailingSlashes((url || '').trim());
       if (qrBaseUrl) {
         await prisma.settings.upsert({
           where: { key: 'qr_base_url' },
