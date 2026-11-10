@@ -5,6 +5,11 @@ All notable changes to SpoolmanSync will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.0.0-jj.2] - 2026-11-10
+
+### Fixed
+- The add-on shuts down cleanly when it is stopped, updated or restarted. A deduction already being written to Spoolman is finished instead of cut off, every open print is saved exactly where it is, and the add-on exits normally instead of being killed (the Supervisor's "did not handle SIGTERM" warning).
+
 ## [2.0.0-jj.1] - 2026-11-09
 
 > JanJoh fork on top of upstream 2.0.0. Read the 2.0.0 upgrade note below: re-run **Configure Automations** and restart Home Assistant after updating.
