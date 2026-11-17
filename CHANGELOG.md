@@ -5,6 +5,24 @@ All notable changes to SpoolmanSync will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.1.1-jj.1] - 2026-11-17
+
+Rebased the JanJoh fork onto upstream 2.1.1, so this release carries all of
+upstream's security fixes — notably the printer-setup path-traversal fix
+(GHSA-jwjr-f93r-v3c7) — on top of the fork's own features.
+
+### Added (fork-only)
+- "Which spool?" phone prompt: when a loaded tray has no serial match, match it
+  by material and colour and ask on the phone which spool it is, then assign the
+  answer.
+- Return spools to their home location when they are unassigned.
+
+### Notes
+- The phantom-serial / "?"-tray handling and the clean-shutdown work from this
+  fork are now merged upstream, so they are no longer carried here.
+- Refill-aware matching, usage alerts and flush-at-100% are left to upstream's
+  own implementations rather than re-applied on top.
+
 ## [2.1.1] - 2026-11-14
 
 ### Security

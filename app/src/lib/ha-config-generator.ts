@@ -198,7 +198,6 @@ ${creality
 }
 
 /**
-/**
  * Forward assign-prompt notification buttons (action ids starting with
  * SPOOLMANSYNC_ASSIGN_) from the HA mobile app to the webhook. One printer-
  * independent automation; enabled only when "match unidentified spools" is on.
@@ -229,6 +228,7 @@ export function generateAssignChoiceAutomationYaml(): string {
 `;
 }
 
+/**
  * The rest_command the tray-change automations call.
  */
 function configurationAdditions(prefixes: string[], webhookUrl: string, webhookSecret: string = ''): string {
