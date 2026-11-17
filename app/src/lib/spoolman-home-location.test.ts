@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-import { SpoolmanClient, HOME_LOCATION_FIELD } from './api/spoolman';
+import { SpoolmanClient, HOME_LOCATION_FIELD, REFILL_FIELD } from './api/spoolman';
 
 /**
  * Behavioral tests for return-to-home: assignSpoolToTray saves the spool's own
@@ -105,6 +105,26 @@ describe('assignSpoolToTray — saving the home location', () => {
     const body = patchBody(calls)!;
     expect('location' in body).toBe(false);
     expect(HOME_LOCATION_FIELD in extraOf(body)).toBe(false);
+  });
+});
+
+describe('assignSpoolToTray — refill flag', () => {
+  it('clears the refill flag when a refill is loaded (it has been mounted)', async () => {
+    const calls = installFetch({ id: 1, extra: { [REFILL_FIELD]: 'true' }, location: 'Shelf 2' });
+    await makeClient().assignSpoolToTray(1, TRAY_A);
+    expect(extraOf(patchBody(calls)!)[REFILL_FIELD]).toBe('false');
+  });
+
+  it('leaves an already-cleared refill flag alone', async () => {
+    const calls = installFetch({ id: 1, extra: { [REFILL_FIELD]: 'false' }, location: 'Shelf 2' });
+    await makeClient().assignSpoolToTray(1, TRAY_A);
+    expect(extraOf(patchBody(calls)!)[REFILL_FIELD]).toBe('false');
+  });
+
+  it('never adds the refill flag to a spool that lacks it', async () => {
+    const calls = installFetch({ id: 1, extra: {}, location: 'Shelf 2' });
+    await makeClient().assignSpoolToTray(1, TRAY_A);
+    expect(REFILL_FIELD in extraOf(patchBody(calls)!)).toBe(false);
   });
 });
 

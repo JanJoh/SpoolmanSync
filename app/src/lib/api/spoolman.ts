@@ -202,6 +202,12 @@ export const SPOOLMAN_LOCATION_MAX = 64;
  * while the return-to-home setting is on (see setReturnToHomeLocation).
  */
 export const HOME_LOCATION_FIELD = 'home_location';
+/**
+ * Optional boolean extra field marking filament bought without a spool (a refill
+ * coil). Loading it into a tray means it has been mounted, so the flag is cleared
+ * on assignment. Only ever flipped true->false; never added to a spool without it.
+ */
+export const REFILL_FIELD = 'refill';
 
 /** Decode a JSON-encoded string extra value, '' for anything else. */
 function parseExtraString(raw: string | undefined): string {
@@ -446,6 +452,9 @@ export class SpoolmanClient {
       }
     }
     newExtra['active_tray'] = JSON.stringify(trayId);
+    // A refill coil is mounted once it is loaded into a tray, so clear the flag.
+    // Only flip an existing 'true' (JSON boolean); never add it to a spool without it.
+    if (newExtra[REFILL_FIELD] === 'true') newExtra[REFILL_FIELD] = 'false';
 
     // If location sync is enabled, set the native location to reflect this tray.
     // An unresolved tray ('') leaves location untouched.

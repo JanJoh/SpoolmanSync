@@ -5,6 +5,16 @@ All notable changes to SpoolmanSync will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.1.1-jj.2] - 2026-11-17
+
+### Added (fork-only)
+
+- Clear the `refill` flag when a spool is loaded into a tray. A spool marked
+  with the boolean `refill` extra (filament bought as a coil, not yet mounted)
+  is mounted once it is assigned to a tray, so the flag is flipped true→false on
+  assign. An existing flag is only ever cleared; it is never added to a spool
+  that lacks it.
+
 ## [2.1.1-jj.1] - 2026-11-17
 
 Rebased the JanJoh fork onto upstream 2.1.1, so this release carries all of
