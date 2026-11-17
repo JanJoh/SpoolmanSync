@@ -112,6 +112,12 @@ function SettingsContent() {
   // Restore a spool's saved home location on unassign (ahead of the holding pen).
   const [returnToHomeLocation, setReturnToHomeLocation] = useState(false);
 
+  // Refill flag clear-on-load (independent of location sync)
+  const [clearRefillOnLoad, setClearRefillOnLoad] = useState(true);
+  const [refillFieldName, setRefillFieldName] = useState('refill');
+  const [savedRefillFieldName, setSavedRefillFieldName] = useState('refill');
+  const seededRefill = useRef(false);
+
   // Assign prompt ("which spool?" for trays with no serial match)
   const [assignPromptEnabled, setAssignPromptEnabled] = useState(false);
   const [assignAutoAssign, setAssignAutoAssign] = useState(true);
@@ -242,6 +248,17 @@ function SettingsContent() {
       }
       if (data.returnToHomeLocation !== undefined) {
         setReturnToHomeLocation(data.returnToHomeLocation);
+      }
+      if (data.refillClear) {
+        setClearRefillOnLoad(data.refillClear.enabled !== false);
+        // Seed the text field once, like the holding pen: it saves on blur and
+        // must not be clobbered by the embedded-mode poll while being typed.
+        if (!seededRefill.current) {
+          seededRefill.current = true;
+          const name = data.refillClear.fieldName || 'refill';
+          setRefillFieldName(name);
+          setSavedRefillFieldName(name);
+        }
       }
 
       // Seed once, like the holding pen: the text inputs are saved on blur and
@@ -656,6 +673,28 @@ function SettingsContent() {
       );
     } catch {
       setUnassignedSpoolLocation(savedUnassignedLocation);
+      toast.error('Failed to save setting');
+    }
+  };
+
+  const saveRefillFieldName = async () => {
+    const fieldName = refillFieldName.trim();
+    if (fieldName === savedRefillFieldName) {
+      setRefillFieldName(fieldName); // normalize whitespace-only edits
+      return;
+    }
+    try {
+      const res = await fetch('/api/settings', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ type: 'refill_clear', fieldName }),
+      });
+      if (!res.ok) throw new Error();
+      setRefillFieldName(fieldName);
+      setSavedRefillFieldName(fieldName);
+      toast.success(`Refill flag field set to "${fieldName || 'refill'}"`);
+    } catch {
+      setRefillFieldName(savedRefillFieldName);
       toast.error('Failed to save setting');
     }
   };
@@ -1546,6 +1585,64 @@ function SettingsContent() {
                         className="max-w-sm"
                         onChange={(e) => setUnassignedSpoolLocation(e.target.value)}
                         onBlur={saveUnassignedLocation}
+                        onKeyDown={(e) => {
+                          if (e.key === 'Enter') e.currentTarget.blur();
+                        }}
+                      />
+                    </div>
+                  )}
+
+                  <Separator />
+
+                  {/* Refill flag — clear a spool's "refill" flag when it is
+                      loaded into a tray (it has been mounted). Independent of
+                      location sync. */}
+                  <div className="flex items-center space-x-3">
+                    <Checkbox
+                      id="clear-refill-on-load"
+                      checked={clearRefillOnLoad}
+                      onCheckedChange={async (checked) => {
+                        const enabled = checked === true;
+                        setClearRefillOnLoad(enabled);
+                        try {
+                          const res = await fetch('/api/settings', {
+                            method: 'POST',
+                            headers: { 'Content-Type': 'application/json' },
+                            body: JSON.stringify({ type: 'refill_clear', enabled }),
+                          });
+                          if (!res.ok) throw new Error();
+                          toast.success(enabled ? 'Refill flag clears when a spool is loaded' : 'Refill flag clearing disabled');
+                        } catch {
+                          setClearRefillOnLoad(!enabled);
+                          toast.error('Failed to save setting');
+                        }
+                      }}
+                    />
+                    <div>
+                      <Label htmlFor="clear-refill-on-load" className="text-sm font-medium cursor-pointer">
+                        Clear the refill flag when a spool is loaded
+                      </Label>
+                      <p className="text-xs text-muted-foreground">
+                        If a spool carries a boolean &quot;refill&quot; flag (an extra field marking filament bought as a coil, not yet mounted), clear it the first time the spool is loaded into a tray — loading it means it has been mounted. Only an existing flag is cleared; it is never added to a spool without it.
+                      </p>
+                    </div>
+                  </div>
+
+                  {clearRefillOnLoad && (
+                    <div className="ml-7 space-y-2">
+                      <LabelWithHint
+                        htmlFor="refill-field-name"
+                        hint="The boolean extra field SpoolmanSync treats as the refill flag. Defaults to 'refill'. Change it only if you track refills under a different Spoolman extra field."
+                      >
+                        Refill flag field name
+                      </LabelWithHint>
+                      <Input
+                        id="refill-field-name"
+                        value={refillFieldName}
+                        placeholder="refill"
+                        className="max-w-sm"
+                        onChange={(e) => setRefillFieldName(e.target.value)}
+                        onBlur={saveRefillFieldName}
                         onKeyDown={(e) => {
                           if (e.key === 'Enter') e.currentTarget.blur();
                         }}

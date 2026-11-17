@@ -5,6 +5,15 @@ All notable changes to SpoolmanSync will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.1.1-jj.3] - 2026-11-17
+
+### Added (fork-only)
+
+- Settings for the refill-flag clear-on-load behaviour: a toggle to turn it on
+  or off (on by default, so existing behaviour is unchanged) and a field-name
+  input to choose which boolean extra field is treated as the refill flag
+  (defaults to `refill`). Independent of Spoolman location sync.
+
 ## [2.1.1-jj.2] - 2026-11-17
 
 ### Added (fork-only)

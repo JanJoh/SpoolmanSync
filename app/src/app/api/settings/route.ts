@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import prisma from '@/lib/db';
-import { SpoolmanClient } from '@/lib/api/spoolman';
+import { SpoolmanClient, REFILL_FIELD, REFILL_CLEAR_ENABLED_KEY, REFILL_FIELD_NAME_KEY } from '@/lib/api/spoolman';
 import {
   isEmbeddedMode,
   isAddonMode,
@@ -72,6 +72,8 @@ export async function GET() {
       const unassignedLocationSetting = await prisma.settings.findUnique({ where: { key: UNASSIGNED_LOCATION_KEY } });
       const returnToHomeSetting = await prisma.settings.findUnique({ where: { key: RETURN_TO_HOME_KEY } });
       const locationGranularitySetting = await prisma.settings.findUnique({ where: { key: LOCATION_GRANULARITY_KEY } });
+      const refillClearSetting = await prisma.settings.findUnique({ where: { key: REFILL_CLEAR_ENABLED_KEY } });
+      const refillFieldSetting = await prisma.settings.findUnique({ where: { key: REFILL_FIELD_NAME_KEY } });
       const assignPromptRows = await prisma.settings.findMany({
         where: { key: { in: [ASSIGN_PROMPT_ENABLED_KEY, ASSIGN_PROMPT_NOTIFY_KEY, AUTO_ASSIGN_CONFIDENT_KEY, PENDING_MINUTES_KEY] } },
       });
@@ -98,6 +100,10 @@ export async function GET() {
         unassignedSpoolLocation: unassignedLocationSetting?.value ?? '',
         returnToHomeLocation: returnToHomeSetting?.value === 'true',
         locationGranularity: parseLocationGranularity(locationGranularitySetting?.value),
+        refillClear: {
+          enabled: refillClearSetting?.value !== 'false',
+          fieldName: (refillFieldSetting?.value ?? '').trim() || REFILL_FIELD,
+        },
         assignPrompt: {
           enabled: assignPromptValue(ASSIGN_PROMPT_ENABLED_KEY) === 'true',
           notifyService: assignPromptValue(ASSIGN_PROMPT_NOTIFY_KEY) ?? '',
@@ -295,6 +301,8 @@ export async function GET() {
     const unassignedLocationSetting = await prisma.settings.findUnique({ where: { key: UNASSIGNED_LOCATION_KEY } });
     const returnToHomeSetting = await prisma.settings.findUnique({ where: { key: RETURN_TO_HOME_KEY } });
     const locationGranularitySetting = await prisma.settings.findUnique({ where: { key: LOCATION_GRANULARITY_KEY } });
+    const refillClearSetting = await prisma.settings.findUnique({ where: { key: REFILL_CLEAR_ENABLED_KEY } });
+    const refillFieldSetting = await prisma.settings.findUnique({ where: { key: REFILL_FIELD_NAME_KEY } });
     const assignPromptRows = await prisma.settings.findMany({
       where: { key: { in: [ASSIGN_PROMPT_ENABLED_KEY, ASSIGN_PROMPT_NOTIFY_KEY, AUTO_ASSIGN_CONFIDENT_KEY, PENDING_MINUTES_KEY] } },
     });
@@ -317,6 +325,10 @@ export async function GET() {
       unassignedSpoolLocation: unassignedLocationSetting?.value ?? '',
       returnToHomeLocation: returnToHomeSetting?.value === 'true',
       locationGranularity: parseLocationGranularity(locationGranularitySetting?.value),
+      refillClear: {
+        enabled: refillClearSetting?.value !== 'false',
+        fieldName: (refillFieldSetting?.value ?? '').trim() || REFILL_FIELD,
+      },
       assignPrompt: {
         enabled: assignPromptValue(ASSIGN_PROMPT_ENABLED_KEY) === 'true',
         notifyService: assignPromptValue(ASSIGN_PROMPT_NOTIFY_KEY) ?? '',
@@ -455,6 +467,29 @@ export async function POST(request: NextRequest) {
         create: { key: RETURN_TO_HOME_KEY, value: String(body.enabled) },
         update: { value: String(body.enabled) },
       });
+      return NextResponse.json({ success: true });
+    }
+
+    if (type === 'refill_clear') {
+      // Clear a spool's refill flag (a boolean extra, default `refill`) when it
+      // is loaded into a tray. Independent of location sync. Defaults on. Fields
+      // are optional so the UI can save one control at a time.
+      const updates: { key: string; value: string }[] = [];
+      if (body.enabled !== undefined) {
+        if (typeof body.enabled !== 'boolean') {
+          return NextResponse.json({ error: 'enabled must be a boolean' }, { status: 400 });
+        }
+        updates.push({ key: REFILL_CLEAR_ENABLED_KEY, value: String(body.enabled) });
+      }
+      if (body.fieldName !== undefined) {
+        if (typeof body.fieldName !== 'string') {
+          return NextResponse.json({ error: 'fieldName must be a string' }, { status: 400 });
+        }
+        updates.push({ key: REFILL_FIELD_NAME_KEY, value: body.fieldName.trim() });
+      }
+      for (const { key, value } of updates) {
+        await prisma.settings.upsert({ where: { key }, create: { key, value }, update: { value } });
+      }
       return NextResponse.json({ success: true });
     }
 

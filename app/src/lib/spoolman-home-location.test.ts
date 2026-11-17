@@ -126,6 +126,32 @@ describe('assignSpoolToTray — refill flag', () => {
     await makeClient().assignSpoolToTray(1, TRAY_A);
     expect(REFILL_FIELD in extraOf(patchBody(calls)!)).toBe(false);
   });
+
+  it('leaves the flag untouched when clearing is disabled', async () => {
+    const calls = installFetch({ id: 1, extra: { [REFILL_FIELD]: 'true' }, location: 'Shelf 2' });
+    const client = makeClient();
+    client.setRefillClear(false, REFILL_FIELD);
+    await client.assignSpoolToTray(1, TRAY_A);
+    expect(extraOf(patchBody(calls)!)[REFILL_FIELD]).toBe('true');
+  });
+
+  it('clears a custom field name and leaves the default refill field alone', async () => {
+    const calls = installFetch({ id: 1, extra: { myflag: 'true', [REFILL_FIELD]: 'true' }, location: 'Shelf 2' });
+    const client = makeClient();
+    client.setRefillClear(true, 'myflag');
+    await client.assignSpoolToTray(1, TRAY_A);
+    const extra = extraOf(patchBody(calls)!);
+    expect(extra.myflag).toBe('false');
+    expect(extra[REFILL_FIELD]).toBe('true');
+  });
+
+  it('falls back to the default field when given a blank name', async () => {
+    const calls = installFetch({ id: 1, extra: { [REFILL_FIELD]: 'true' }, location: 'Shelf 2' });
+    const client = makeClient();
+    client.setRefillClear(true, '   ');
+    await client.assignSpoolToTray(1, TRAY_A);
+    expect(extraOf(patchBody(calls)!)[REFILL_FIELD]).toBe('false');
+  });
 });
 
 describe('unassignSpoolFromTray — restoring the home location', () => {

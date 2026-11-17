@@ -208,6 +208,10 @@ export const HOME_LOCATION_FIELD = 'home_location';
  * on assignment. Only ever flipped true->false; never added to a spool without it.
  */
 export const REFILL_FIELD = 'refill';
+/** Settings key: whether the refill flag is cleared on load (default on). */
+export const REFILL_CLEAR_ENABLED_KEY = 'clear_refill_on_load';
+/** Settings key: which extra field is treated as the refill flag (default `refill`). */
+export const REFILL_FIELD_NAME_KEY = 'refill_field_name';
 
 /** Decode a JSON-encoded string extra value, '' for anything else. */
 function parseExtraString(raw: string | undefined): string {
@@ -227,6 +231,8 @@ export class SpoolmanClient {
   private locationMatcher: LocationMatcher | null = null;
   private unassignedLocation = '';
   private returnToHomeLocation = false;
+  private refillClearEnabled = true;
+  private refillFieldName: string = REFILL_FIELD;
 
   constructor(baseUrl: string) {
     this.baseUrl = baseUrl.replace(/\/$/, '');
@@ -289,6 +295,16 @@ export class SpoolmanClient {
    */
   setReturnToHomeLocation(enabled: boolean): void {
     this.returnToHomeLocation = enabled;
+  }
+
+  /**
+   * Configure clearing of the refill flag on assign. Enabled by default with
+   * field `refill`; a blank field name falls back to that default. When
+   * disabled, assignSpoolToTray leaves every refill flag untouched.
+   */
+  setRefillClear(enabled: boolean, fieldName: string): void {
+    this.refillClearEnabled = enabled;
+    this.refillFieldName = (fieldName || '').trim() || REFILL_FIELD;
   }
 
   /**
@@ -452,9 +468,12 @@ export class SpoolmanClient {
       }
     }
     newExtra['active_tray'] = JSON.stringify(trayId);
-    // A refill coil is mounted once it is loaded into a tray, so clear the flag.
-    // Only flip an existing 'true' (JSON boolean); never add it to a spool without it.
-    if (newExtra[REFILL_FIELD] === 'true') newExtra[REFILL_FIELD] = 'false';
+    // A refill coil is mounted once it is loaded into a tray, so clear the flag
+    // (configurable; on by default). Only flip an existing 'true' (JSON boolean);
+    // never add the field to a spool without it.
+    if (this.refillClearEnabled && newExtra[this.refillFieldName] === 'true') {
+      newExtra[this.refillFieldName] = 'false';
+    }
 
     // If location sync is enabled, set the native location to reflect this tray.
     // An unresolved tray ('') leaves location untouched.

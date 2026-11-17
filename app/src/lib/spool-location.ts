@@ -22,6 +22,9 @@ import { AMS_3H_NAME, HomeAssistantClient } from '@/lib/api/homeassistant';
 import { getVirtualPrinters, virtualSlotKey } from '@/lib/virtual-printers';
 import {
   SPOOLMAN_LOCATION_MAX,
+  REFILL_FIELD,
+  REFILL_CLEAR_ENABLED_KEY,
+  REFILL_FIELD_NAME_KEY,
   type LocationMatcher,
   type LocationResolver,
   type Spool,
@@ -98,6 +101,23 @@ export async function isReturnToHomeEnabled(): Promise<boolean> {
   if (!(await isLocationSyncEnabled())) return false;
   const s = await prisma.settings.findUnique({ where: { key: RETURN_TO_HOME_KEY } });
   return s?.value === 'true';
+}
+
+/**
+ * Whether the refill flag is cleared when a spool is loaded into a tray.
+ * Defaults ON — only an explicit 'false' disables it — so the long-standing
+ * behavior is unchanged until a user turns it off. Independent of location sync.
+ */
+export async function isRefillClearEnabled(): Promise<boolean> {
+  const s = await prisma.settings.findUnique({ where: { key: REFILL_CLEAR_ENABLED_KEY } });
+  return s?.value !== 'false';
+}
+
+/** The extra field treated as the refill flag; defaults to `refill`. */
+export async function getRefillFieldName(): Promise<string> {
+  const s = await prisma.settings.findUnique({ where: { key: REFILL_FIELD_NAME_KEY } });
+  const value = (s?.value ?? '').trim();
+  return value || REFILL_FIELD;
 }
 
 /** Read a stored granularity, falling back to the original tray-level labels. */
@@ -686,6 +706,10 @@ export async function reconcileSpoolLocations(
  * Returns whether sync is active, for callers that want to know.
  */
 export async function applyLocationSync(client: SpoolmanClient): Promise<boolean> {
+  // Refill-clear is independent of location sync, so wire it before the gate
+  // below — it must take effect even when location sync is off.
+  client.setRefillClear(await isRefillClearEnabled(), await getRefillFieldName());
+
   const sync = await makeLocationSync();
   if (!sync) return false;
 
